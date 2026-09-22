@@ -1,0 +1,13 @@
+{
+  "name": "bot-ofertas",
+  "version": "0.3.1",
+  "private": true,
+  "scripts": {
+    "start": "npm --prefix desktop start",
+    "dev": "npm --prefix desktop run dev",
+    "test": "npm --prefix desktop test",
+    "build": "npm --prefix desktop run build",
+    "release": "npm --prefix desktop run release",
+    "set-version": "npm --prefix desktop run set-version --"
+  }
+}

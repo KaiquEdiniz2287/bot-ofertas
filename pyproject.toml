@@ -1,6 +1,6 @@
 [project]
 name = "grupo-ofertas-telegram"
-version = "0.2.0"
+version = "0.3.1"
 description = "Bot de ofertas para canal/grupo do Telegram com links de afiliado (Mercado Livre, Shopee, Amazon)"
 requires-python = ">=3.12"
 dependencies = [

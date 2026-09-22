@@ -21,15 +21,32 @@ Dois modos, no mesmo programa:
 
 ## 🖥️ Aplicativo desktop para Windows (recomendado)
 
-Instale pelo arquivo `Bot de Ofertas_0.2.0_x64-setup.exe`. O aplicativo abre sem terminal externo e reúne configuração, operação, histórico e logs em uma única janela.
+Instale pelo arquivo `Bot de Ofertas_0.3.1_x64-setup.exe`. O aplicativo abre sem terminal externo e reúne configuração, operação, histórico e logs em uma única janela.
 
 - Fechar a janela mantém o aplicativo na bandeja do Windows.
 - “Iniciar com o Windows” e “Ligar o bot automaticamente” são opções independentes e vêm desativadas.
 - Na primeira execução, use **Configurações → Importar instalação atual** para copiar `.env`, histórico e sessão do Mercado Livre. A pasta original não é alterada.
 - Os dados ficam em `%LOCALAPPDATA%\br.com.kaiodiniz.botofertas` e não são incluídos no instalador.
 - Use **Sair completamente** no menu da bandeja para encerrar também o backend.
+- O aplicativo procura atualizações assinadas no GitHub automaticamente. Quando uma nova versão estiver pronta, basta reiniciar pelo aviso exibido na tela.
 
 O instalador ainda não possui assinatura digital e pode exibir um aviso do Windows SmartScreen. Confira a origem do arquivo antes de executá-lo; não é necessário desativar mecanismos de segurança do Windows.
+
+### Comandos npm
+
+Execute na raiz do projeto:
+
+```powershell
+npm start                         # desenvolvimento
+npm test                          # testes da interface
+npm run build                     # testes + backend + instalador
+npm run set-version -- 0.3.1      # sincroniza a versão em todo o projeto
+npm run release                   # build assinado + latest.json do auto-update
+```
+
+`npm run release` gera o instalador, o arquivo `.sig` e o `latest.json` em `desktop/src-tauri/target/release/bundle/nsis`. Publique os três arquivos em uma GitHub Release cuja tag seja `v<versão>`.
+
+> Guarde um backup seguro de `desktop/src-tauri/tauri.key`. Essa chave é ignorada pelo Git, nunca deve ser publicada e é necessária para todas as atualizações futuras. Se ela for perdida, instalações existentes não aceitarão novas versões.
 
 ## Painel web legado
 

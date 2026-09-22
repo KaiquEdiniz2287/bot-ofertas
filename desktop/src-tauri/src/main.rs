@@ -4,9 +4,10 @@ mod backend;
 mod tray;
 
 use backend::Backend;
-use tauri::{Manager, WindowEvent};
+use tauri::{Emitter, Manager, WindowEvent};
 use tauri_plugin_autostart::ManagerExt;
 use tauri_plugin_dialog::DialogExt;
+use tauri_plugin_updater::UpdaterExt;
 
 #[tauri::command]
 async fn backend_request(
@@ -59,6 +60,67 @@ async fn quit_app(app: tauri::AppHandle) {
     app.exit(0);
 }
 
+#[tauri::command]
+async fn check_for_updates(app: tauri::AppHandle) -> Result<bool, String> {
+    let updater = app.updater().map_err(|error| error.to_string())?;
+    let Some(update) = updater.check().await.map_err(|error| error.to_string())? else {
+        return Ok(false);
+    };
+
+    app.emit("update-available", &update.version)
+        .map_err(|error| error.to_string())?;
+    let backend = app.state::<Backend>();
+    let was_running = backend
+        .request("get_status".into(), serde_json::json!({}))
+        .await
+        .ok()
+        .and_then(|status| status.get("botRunning").and_then(|value| value.as_bool()))
+        .unwrap_or(false);
+    let _ = backend
+        .request("stop_bot".into(), serde_json::json!({}))
+        .await;
+
+    let progress_app = app.clone();
+    let mut downloaded = 0_u64;
+    let result = update
+        .download_and_install(
+            move |chunk_length, content_length| {
+                downloaded += chunk_length as u64;
+                let percent = content_length
+                    .filter(|total| *total > 0)
+                    .map(|total| downloaded.saturating_mul(100) / total)
+                    .unwrap_or(0)
+                    .min(100);
+                let _ = progress_app.emit("update-progress", percent);
+            },
+            || {},
+        )
+        .await;
+    if let Err(error) = result {
+        if was_running {
+            let _ = backend
+                .request("start_bot".into(), serde_json::json!({}))
+                .await;
+        }
+        let message = error.to_string();
+        let _ = app.emit("update-error", &message);
+        return Err(message);
+    }
+    let _ = app.emit("update-downloaded", ());
+    Ok(true)
+}
+
+#[tauri::command]
+async fn restart_app(app: tauri::AppHandle) {
+    let backend = app.state::<Backend>();
+    let _ = backend
+        .request("shutdown".into(), serde_json::json!({}))
+        .await;
+    backend.kill();
+    drop(backend);
+    app.restart();
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _, _| {
@@ -70,6 +132,7 @@ fn main() {
                 .build(),
         )
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(Backend::new())
         .invoke_handler(tauri::generate_handler![
             backend_request,
@@ -77,7 +140,9 @@ fn main() {
             get_autostart,
             set_autostart,
             choose_legacy_folder,
-            quit_app
+            quit_app,
+            check_for_updates,
+            restart_app
         ])
         .setup(|app| {
             app.state::<Backend>().start(app.handle())?;
