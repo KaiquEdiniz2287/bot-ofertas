@@ -43,6 +43,11 @@ fn set_autostart(app: tauri::AppHandle, enabled: bool) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn get_app_version() -> &'static str {
+    env!("CARGO_PKG_VERSION")
+}
+
+#[tauri::command]
 fn choose_legacy_folder(app: tauri::AppHandle) -> Option<String> {
     app.dialog()
         .file()
@@ -69,6 +74,15 @@ async fn check_for_updates(app: tauri::AppHandle) -> Result<bool, String> {
 
     app.emit("update-available", &update.version)
         .map_err(|error| error.to_string())?;
+    Ok(true)
+}
+
+#[tauri::command]
+async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
+    let updater = app.updater().map_err(|error| error.to_string())?;
+    let Some(update) = updater.check().await.map_err(|error| error.to_string())? else {
+        return Err("A atualização não está mais disponível.".into());
+    };
     let backend = app.state::<Backend>();
     let was_running = backend
         .request("get_status".into(), serde_json::json!({}))
@@ -107,7 +121,7 @@ async fn check_for_updates(app: tauri::AppHandle) -> Result<bool, String> {
         return Err(message);
     }
     let _ = app.emit("update-downloaded", ());
-    Ok(true)
+    Ok(())
 }
 
 #[tauri::command]
@@ -139,9 +153,11 @@ fn main() {
             show_main_window,
             get_autostart,
             set_autostart,
+            get_app_version,
             choose_legacy_folder,
             quit_app,
             check_for_updates,
+            install_update,
             restart_app
         ])
         .setup(|app| {

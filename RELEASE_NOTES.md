@@ -1,3 +1,20 @@
+# 0.4.0 — Salvamento confiável e atualização sob controle
+
+- O salvamento das credenciais continua mesmo se o Windows recusar a alteração da inicialização automática.
+- O botão de salvar informa quando está processando e sempre apresenta o resultado.
+- A versão instalada agora aparece no rodapé da barra lateral.
+- Novas atualizações perguntam antes de baixar: “Atualizar agora” ou “Deixar para depois”.
+- Atualizações adiadas permanecem visíveis no rodapé e podem ser retomadas quando o usuário quiser.
+- O bot só é interrompido depois que o usuário escolhe instalar a atualização.
+
+## Versionamento
+
+Versão: 0.3.2 → 0.4.0
+Tipo: MINOR
+Motivo: correção do fluxo de persistência e inclusão de controles visíveis para versão e atualização.
+
+---
+
 # 0.3.2 — Correção do salvamento das configurações
 
 - Corrigido o salvamento da primeira configuração quando ainda não existe `config.yaml`.

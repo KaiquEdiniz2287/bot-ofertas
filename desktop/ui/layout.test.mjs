@@ -4,6 +4,8 @@ import test from "node:test";
 
 const css = readFileSync(new URL("./styles.css", import.meta.url), "utf8");
 const app = readFileSync(new URL("./app.js", import.meta.url), "utf8");
+const html = readFileSync(new URL("./index.html", import.meta.url), "utf8");
+const rust = readFileSync(new URL("../src-tauri/src/main.rs", import.meta.url), "utf8");
 
 test("contém largura e textos longos sem vazar da janela", () => {
   assert.match(css, /grid-template-columns:\s*230px minmax\(0, 1fr\)/);
@@ -21,4 +23,19 @@ test("mantém tabela e ações utilizáveis", () => {
 test("exibe as credenciais da Amazon nas configurações", () => {
   assert.match(app, /field\("AMAZON_CREDENTIAL_ID"/);
   assert.match(app, /field\("AMAZON_CREDENTIAL_SECRET"[^)]*true\)/);
+});
+
+test("salvamento trata falha do início com o Windows", () => {
+  assert.match(app, /catch\(error\)\{autostartError=String\(error\)/);
+  assert.match(app, /button\.textContent="Salvando…"/);
+  assert.match(app, /request\("save_settings"/);
+});
+
+test("exibe versão e mantém a atualização disponível para decisão", () => {
+  assert.match(html, /id="app-version"/);
+  assert.match(html, /id="update-badge"/);
+  assert.match(html, />Atualizar agora</);
+  const check = rust.slice(rust.indexOf("async fn check_for_updates"), rust.indexOf("async fn install_update"));
+  assert.doesNotMatch(check, /download_and_install/);
+  assert.match(app, /update-badge.*classList\.remove\("hidden"\)/s);
 });

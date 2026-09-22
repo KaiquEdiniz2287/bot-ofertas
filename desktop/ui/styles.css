@@ -31,9 +31,13 @@ aside {
   padding: 22px 14px;
   border-right: 1px solid var(--line);
   background: var(--panel);
+  display: flex;
+  flex-direction: column;
 }
 .brand { padding: 0 10px 25px; font-size: 18px; white-space: nowrap; }
 nav { display: grid; gap: 6px; }
+.sidebar-footer { display: grid; gap: 10px; margin-top: auto; padding: 18px 10px 0; color: var(--muted); }
+.update-badge { padding: 9px 10px; border-color: var(--accent); color: #ff9a78; font-size: 13px; text-align: center; }
 
 button {
   min-width: 0;
@@ -116,6 +120,8 @@ td:nth-child(2) { min-width: 240px; overflow-wrap: anywhere; }
   .brand strong { display: none; }
   nav { display: flex; gap: 5px; overflow-x: auto; }
   nav button { flex: none; padding: 8px 10px; white-space: nowrap; }
+  .sidebar-footer { display: flex; align-items: center; flex: none; margin: 0 0 0 auto; padding: 0; }
+  .update-badge { max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   main { padding: 18px; }
   header { display: grid; grid-template-columns: 1fr auto; gap: 12px; }
   header > div { grid-column: 1 / -1; min-width: 0; }
@@ -128,6 +134,8 @@ td:nth-child(2) { min-width: 240px; overflow-wrap: anywhere; }
   nav { gap: 2px; scrollbar-width: none; }
   nav::-webkit-scrollbar { display: none; }
   nav button { padding: 7px 6px; font-size: 13px; }
+  .sidebar-footer { margin-top: 8px; }
+  .sidebar-footer small { display: none; }
   .grid { grid-template-columns: 1fr; }
 }
 
