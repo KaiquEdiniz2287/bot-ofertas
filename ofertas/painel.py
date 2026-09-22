@@ -21,9 +21,9 @@ import requests
 
 from .config import BASE_DIR, DATA_DIR
 from .painel_html import PAGINA
+from .settings import ENV_PATH, read_env, write_env
 
 HOST, PORT = "127.0.0.1", 8481  # 8478=split-app, 8479=ClipOS/cortes — evita colisão
-ENV_PATH = BASE_DIR / ".env"
 
 # (chave, rótulo, grupo, é_segredo, ajuda)
 CAMPOS = [
@@ -52,31 +52,11 @@ CHAVES = [c[0] for c in CAMPOS]
 # ── .env ──────────────────────────────────────────────────────────────
 
 def ler_env() -> dict[str, str]:
-    valores = {k: "" for k in CHAVES}
-    if ENV_PATH.exists():
-        for linha in ENV_PATH.read_text(encoding="utf-8").splitlines():
-            linha = linha.strip()
-            if linha and not linha.startswith("#") and "=" in linha:
-                k, _, v = linha.partition("=")
-                if k.strip() in valores:
-                    valores[k.strip()] = v.strip()
-    return valores
+    return read_env(ENV_PATH)
 
 
 def salvar_env(novos: dict[str, str]) -> None:
-    atuais = ler_env()
-    for k, v in novos.items():
-        if k in atuais:
-            atuais[k] = str(v).strip()
-    linhas = ["# Configuração do bot de ofertas (gerado pelo painel).",
-              "# Não compartilhe este arquivo — ele guarda seus segredos.", ""]
-    grupo_atual = None
-    for chave, rotulo, grupo, *_ in CAMPOS:
-        if grupo != grupo_atual:
-            linhas.append(f"# ── {grupo} ──")
-            grupo_atual = grupo
-        linhas.append(f"{chave}={atuais.get(chave, '')}")
-    ENV_PATH.write_text("\n".join(linhas) + "\n", encoding="utf-8")
+    write_env(ENV_PATH, novos)
 
 
 # ── Processo do bot ───────────────────────────────────────────────────

@@ -156,7 +156,7 @@ async def _job_ciclo(ctx: ContextTypes.DEFAULT_TYPE):
         await pipeline.avisar_dono(ctx.bot, f"⚠️ O ciclo automático falhou: {type(e).__name__}: {e}")
 
 
-def rodar():
+def criar_aplicacao() -> Application:
     if not config.bot_token:
         raise SystemExit("TELEGRAM_BOT_TOKEN não configurado — veja o README (passo 1).")
 
@@ -178,6 +178,63 @@ def rodar():
         log.info("Ciclo automático a cada %d min", config.intervalo_minutos)
     else:
         log.info("Ciclo automático desligado (sem fonte ativa ou sem CHAT_ID)")
+
+    return app
+
+
+class BotRuntime:
+    """Ciclo de vida assíncrono usado pela interface desktop."""
+
+    def __init__(self, factory=criar_aplicacao):
+        self._factory = factory
+        self._app = None
+        self._lock = asyncio.Lock()
+
+    @property
+    def running(self) -> bool:
+        return self._app is not None
+
+    @property
+    def bot(self):
+        return self._app.bot if self._app is not None else None
+
+    async def start(self) -> bool:
+        async with self._lock:
+            if self._app is not None:
+                return False
+            app = self._factory()
+            initialized = polling = started = False
+            try:
+                await app.initialize()
+                initialized = True
+                await app.updater.start_polling(allowed_updates=Update.ALL_TYPES)
+                polling = True
+                await app.start()
+                started = True
+                self._app = app
+                return True
+            except BaseException:
+                if started:
+                    await app.stop()
+                if polling:
+                    await app.updater.stop()
+                if initialized:
+                    await app.shutdown()
+                raise
+
+    async def stop(self) -> bool:
+        async with self._lock:
+            if self._app is None:
+                return False
+            app, self._app = self._app, None
+            await app.updater.stop()
+            await app.stop()
+            await app.shutdown()
+            return True
+
+
+def rodar():
+    app = criar_aplicacao()
 
     log.info("Bot rodando — fale com ele no privado do Telegram")
     app.run_polling(allowed_updates=Update.ALL_TYPES)

@@ -19,7 +19,19 @@ Dois modos, no mesmo programa:
 
 ---
 
-## 🖥️ Jeito fácil: o painel gráfico (recomendado)
+## 🖥️ Aplicativo desktop para Windows (recomendado)
+
+Instale pelo arquivo `Bot de Ofertas_0.2.0_x64-setup.exe`. O aplicativo abre sem terminal externo e reúne configuração, operação, histórico e logs em uma única janela.
+
+- Fechar a janela mantém o aplicativo na bandeja do Windows.
+- “Iniciar com o Windows” e “Ligar o bot automaticamente” são opções independentes e vêm desativadas.
+- Na primeira execução, use **Configurações → Importar instalação atual** para copiar `.env`, histórico e sessão do Mercado Livre. A pasta original não é alterada.
+- Os dados ficam em `%LOCALAPPDATA%\br.com.kaiodiniz.botofertas` e não são incluídos no instalador.
+- Use **Sair completamente** no menu da bandeja para encerrar também o backend.
+
+O instalador ainda não possui assinatura digital e pode exibir um aviso do Windows SmartScreen. Confira a origem do arquivo antes de executá-lo; não é necessário desativar mecanismos de segurança do Windows.
+
+## Painel web legado
 
 **Dê dois cliques em `PAINEL.bat`.** Ele prepara o ambiente sozinho e abre um painel no seu navegador, onde você faz tudo com formulário e botões — sem terminal:
 

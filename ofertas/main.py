@@ -95,12 +95,22 @@ def cmd_painel(_):
 
 
 def cmd_instalar_navegador(_):
-    import subprocess
-    from . import config  # noqa: F401 — define PLAYWRIGHT_BROWSERS_PATH (data/pw-browsers)
-    r = subprocess.run([sys.executable, "-m", "playwright", "install", "chromium"])
-    if r.returncode == 0:
+    code = instalar_navegador()
+    if code == 0:
         print("✅ Chromium instalado em data\\pw-browsers")
-    raise SystemExit(r.returncode)
+    raise SystemExit(code)
+
+
+def instalar_navegador() -> int:
+    import subprocess
+    from . import config as _config  # noqa: F401 — define PLAYWRIGHT_BROWSERS_PATH
+    if getattr(sys, "frozen", False):
+        from playwright._impl._driver import compute_driver_executable
+        node, cli = compute_driver_executable()
+        command = [node, cli, "install", "chromium"]
+    else:
+        command = [sys.executable, "-m", "playwright", "install", "chromium"]
+    return subprocess.run(command).returncode
 
 
 def cmd_ml_login(_):
@@ -137,8 +147,6 @@ def main():
         sys.stdout.reconfigure(encoding="utf-8")
     except Exception:
         pass
-    _log()
-
     p = argparse.ArgumentParser(prog="ofertas",
                                 description="Bot de ofertas para Telegram com links de afiliado")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -163,5 +171,10 @@ def main():
     pt.add_argument("fonte", choices=["ml", "shopee", "amazon"])
     pt.set_defaults(fn=cmd_testar)
 
+    sub.add_parser("desktop", help=argparse.SUPPRESS).set_defaults(fn=lambda _: __import__(
+        "ofertas.desktop_service", fromlist=["run_desktop"]).run_desktop())
+
     args = p.parse_args()
+    if args.cmd != "desktop":
+        _log()
     args.fn(args)

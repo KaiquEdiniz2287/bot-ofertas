@@ -1,24 +1,31 @@
 import os
+import shutil
 from datetime import datetime
 from pathlib import Path
 
 import yaml
 from dotenv import load_dotenv
 
-BASE_DIR = Path(__file__).resolve().parent.parent
-DATA_DIR = BASE_DIR / "data"
-DATA_DIR.mkdir(exist_ok=True)
+from .runtime_paths import PATHS
+
+BASE_DIR = PATHS.project_root
+CONFIG_DIR = PATHS.config_dir
+DATA_DIR = PATHS.data_dir
+
+_config_path = CONFIG_DIR / "config.yaml"
+if not _config_path.exists() and (BASE_DIR / "config.yaml").exists():
+    shutil.copy2(BASE_DIR / "config.yaml", _config_path)
 
 # Navegador do Playwright fica dentro do projeto: instalações no AppData podem
 # não ser visíveis entre sessões diferentes (sandbox). Instale com:
 # uv run python -m ofertas instalar-navegador
 os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", str(DATA_DIR / "pw-browsers"))
 
-load_dotenv(BASE_DIR / ".env")
+load_dotenv(CONFIG_DIR / ".env", override=True)
 
 
 def _ler_yaml() -> dict:
-    caminho = BASE_DIR / "config.yaml"
+    caminho = CONFIG_DIR / "config.yaml"
     if not caminho.exists():
         return {}
     with open(caminho, encoding="utf-8") as f:
@@ -80,6 +87,15 @@ class Config:
 
 
 config = Config()
+
+
+def reload_config() -> Config:
+    """Recarrega o singleton sem invalidar imports feitos por outros módulos."""
+    load_dotenv(CONFIG_DIR / ".env", override=True)
+    atualizado = Config()
+    config.__dict__.clear()
+    config.__dict__.update(atualizado.__dict__)
+    return config
 
 
 def dentro_do_horario(agora: datetime | None = None) -> bool:
