@@ -187,13 +187,14 @@ def read_settings(mask_secrets: bool = True) -> dict:
 def write_settings(payload: dict) -> None:
     env_updates = payload.get("env") or {}
     remove_secrets = payload.get("removeSecrets") or []
-    yaml_value = _deep_merge(_read_yaml(), payload.get("config") or {})
-    _validate_yaml(yaml_value)
     nichos = payload.get("nichos")
     preferences = payload.get("preferences")
 
     write_env(ENV_PATH, env_updates, remove_secrets)
-    _atomic_write(YAML_PATH, yaml.safe_dump(yaml_value, allow_unicode=True, sort_keys=False))
+    if "config" in payload:
+        yaml_value = _deep_merge(_read_yaml(), payload.get("config") or {})
+        _validate_yaml(yaml_value)
+        _atomic_write(YAML_PATH, yaml.safe_dump(yaml_value, allow_unicode=True, sort_keys=False))
     if nichos is not None:
         if not isinstance(nichos, list) or not all(isinstance(item, str) for item in nichos):
             raise SettingsError("A seleção de categorias é inválida.")

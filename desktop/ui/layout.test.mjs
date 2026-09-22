@@ -17,3 +17,8 @@ test("mantém tabela e ações utilizáveis", () => {
   assert.match(css, /\.actions \.primary/);
   assert.match(app, /Nenhuma oferta registrada/);
 });
+
+test("exibe as credenciais da Amazon nas configurações", () => {
+  assert.match(app, /field\("AMAZON_CREDENTIAL_ID"/);
+  assert.match(app, /field\("AMAZON_CREDENTIAL_SECRET"[^)]*true\)/);
+});

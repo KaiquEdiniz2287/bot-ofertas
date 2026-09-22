@@ -9,7 +9,7 @@ canal do Telegram com os SEUS links de afiliado.
   JEITO FACIL (recomendado): APLICATIVO DESKTOP
 ----------------------------------------------------------------
 
-  >>> Execute o instalador Bot de Ofertas_0.3.1_x64-setup.exe <<<
+  >>> Execute o instalador Bot de Ofertas_0.3.2_x64-setup.exe <<<
 
 Ele instala e abre um aplicativo sem janela de terminal, onde voce:
 voce:

@@ -1,3 +1,17 @@
+# 0.3.2 — Correção do salvamento das configurações
+
+- Corrigido o salvamento da primeira configuração quando ainda não existe `config.yaml`.
+- Adicionados os campos Credential ID e Credential Secret da Amazon ao aplicativo desktop.
+- Adicionado teste de regressão para garantir a persistência das credenciais.
+
+## Versionamento
+
+Versão: 0.3.1 → 0.3.2
+Tipo: PATCH
+Motivo: correção de persistência e inclusão de campos já suportados pelo backend.
+
+---
+
 # 0.3.1 — Correções de interface
 
 - Caminhos e textos longos agora quebram corretamente sem ultrapassar os cartões ou a janela.
