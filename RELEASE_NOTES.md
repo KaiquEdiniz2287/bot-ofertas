@@ -1,3 +1,18 @@
+# 0.4.1 — Inicialização opcional e ícone da bandeja
+
+- Salvar configurações não tenta mais desativar a inicialização com o Windows quando ela já está desativada.
+- O aviso sobre inicialização só aparece quando uma alteração realmente solicitada falha.
+- O ícone do aplicativo agora é definido explicitamente na bandeja do Windows.
+- Os recursos de ícone foram declarados no pacote desktop.
+
+## Versionamento
+
+Versão: 0.4.0 → 0.4.1
+Tipo: PATCH
+Motivo: correções do salvamento opcional e da apresentação do ícone na bandeja.
+
+---
+
 # 0.4.0 — Salvamento confiável e atualização sob controle
 
 - O salvamento das credenciais continua mesmo se o Windows recusar a alteração da inicialização automática.

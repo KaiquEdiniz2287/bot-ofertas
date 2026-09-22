@@ -12,7 +12,7 @@ pub fn build(app: &App) -> tauri::Result<()> {
     let error = MenuItem::with_id(app, "error", "Mostrar último erro", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Sair completamente", true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&open, &toggle, &cycle, &error, &quit])?;
-    TrayIconBuilder::new()
+    let mut tray = TrayIconBuilder::new()
         .menu(&menu)
         .on_menu_event(|app, event| match event.id.as_ref() {
             "open" | "error" => show(app),
@@ -58,8 +58,11 @@ pub fn build(app: &App) -> tauri::Result<()> {
                 });
             }
             _ => {}
-        })
-        .build(app)?;
+        });
+    if let Some(icon) = app.default_window_icon() {
+        tray = tray.icon(icon.clone());
+    }
+    tray.build(app)?;
     Ok(())
 }
 

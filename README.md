@@ -21,7 +21,7 @@ Dois modos, no mesmo programa:
 
 ## 🖥️ Aplicativo desktop para Windows (recomendado)
 
-Instale pelo arquivo `Bot de Ofertas_0.4.0_x64-setup.exe`. O aplicativo abre sem terminal externo e reúne configuração, operação, histórico e logs em uma única janela.
+Instale pelo arquivo `Bot de Ofertas_0.4.1_x64-setup.exe`. O aplicativo abre sem terminal externo e reúne configuração, operação, histórico e logs em uma única janela.
 
 - Fechar a janela mantém o aplicativo na bandeja do Windows.
 - “Iniciar com o Windows” e “Ligar o bot automaticamente” são opções independentes e vêm desativadas.
@@ -40,7 +40,7 @@ Execute na raiz do projeto:
 npm start                         # desenvolvimento
 npm test                          # testes da interface
 npm run build                     # testes + backend + instalador
-npm run set-version -- 0.4.0      # sincroniza a versão em todo o projeto
+npm run set-version -- 0.4.1      # sincroniza a versão em todo o projeto
 npm run release                   # build assinado + latest.json do auto-update
 ```
 

@@ -27,6 +27,7 @@ test("exibe as credenciais da Amazon nas configurações", () => {
 
 test("salvamento trata falha do início com o Windows", () => {
   assert.match(app, /catch\(error\)\{autostartError=String\(error\)/);
+  assert.match(app, /if\(enabled!==preferences\.startWithWindows\)await invoke\("set_autostart"/);
   assert.match(app, /button\.textContent="Salvando…"/);
   assert.match(app, /request\("save_settings"/);
 });
