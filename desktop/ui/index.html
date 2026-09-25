@@ -1,6 +1,54 @@
-<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Bot de Ofertas</title><link rel="stylesheet" href="styles.css"></head>
-<body><aside><div class="brand">🔥 <strong>Bot de Ofertas</strong></div><nav aria-label="Principal"><button data-page="overview" class="active">Visão geral</button><button data-page="operation">Operação</button><button data-page="settings">Configurações</button><button data-page="history">Histórico</button><button data-page="console">Console</button></nav><div class="sidebar-footer"><button id="update-badge" class="update-badge hidden">Atualização disponível</button><small id="app-version">Versão…</small></div></aside>
-<main><header><div><h1 id="title">Visão geral</h1><p id="subtitle">Controle local das suas ofertas</p></div><span id="status" class="pill">Conectando…</span><button id="toggle" class="primary" disabled>Iniciar bot</button></header>
-<section id="content" aria-live="polite"></section></main>
-<div id="update-overlay" class="overlay hidden" role="dialog" aria-modal="true" aria-labelledby="update-title"><div class="update-card"><div class="update-icon">↻</div><h2 id="update-title">Nova versão disponível</h2><p id="update-subtitle">Deseja baixar e instalar agora?</p><div id="update-progress-wrap" class="progress hidden"><div id="update-progress-bar"></div></div><strong id="update-percent"></strong><div id="update-actions" class="actions"><button id="update-later">Deixar para depois</button><button id="update-now" class="primary">Atualizar agora</button><button id="update-restart" class="primary hidden">Reiniciar e atualizar</button></div></div></div>
-<div id="toast" role="status"></div><script type="module" src="app.js"></script></body></html>
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Bot de Ofertas</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <aside class="sidebar">
+    <div class="brand">
+      <img src="logo.svg" alt="">
+      <div><strong>Bot de Ofertas</strong><span>Central de automação</span></div>
+    </div>
+    <span class="nav-label">NAVEGAÇÃO</span>
+    <nav aria-label="Principal">
+      <button data-page="overview" class="active"><span class="nav-icon">⌂</span><span>Visão geral</span></button>
+      <button data-page="operation"><span class="nav-icon">▶</span><span>Operação</span></button>
+      <button data-page="settings"><span class="nav-icon">⚙</span><span>Configurações</span></button>
+      <button data-page="history"><span class="nav-icon">◷</span><span>Histórico</span></button>
+      <button data-page="console"><span class="nav-icon">›_</span><span>Console</span></button>
+    </nav>
+    <div class="sidebar-footer">
+      <button id="update-badge" class="update-badge hidden">Atualização disponível</button>
+      <div class="version-row"><span class="version-dot"></span><small id="app-version">Versão…</small></div>
+    </div>
+  </aside>
+
+  <main>
+    <header class="topbar">
+      <div class="page-title"><span class="eyebrow">BOT DE OFERTAS</span><h1 id="title">Visão geral</h1><p id="subtitle">Acompanhe a operação e a saúde do bot.</p></div>
+      <div class="topbar-actions"><span id="status" class="status-pill" data-tone="warning">Conectando…</span><button id="toggle" class="button primary" disabled>Iniciar bot</button></div>
+    </header>
+    <section id="content"></section>
+  </main>
+
+  <div id="update-overlay" class="overlay hidden" role="dialog" aria-modal="true" aria-labelledby="update-title">
+    <div class="update-card">
+      <div class="update-icon">↻</div>
+      <h2 id="update-title">Nova versão disponível</h2>
+      <p id="update-subtitle">Deseja baixar e instalar agora?</p>
+      <div id="update-progress-wrap" class="progress hidden"><div id="update-progress-bar"></div></div>
+      <strong id="update-percent"></strong>
+      <div id="update-actions" class="actions">
+        <button id="update-later" class="button secondary">Deixar para depois</button>
+        <button id="update-now" class="button primary">Atualizar agora</button>
+        <button id="update-restart" class="button primary hidden">Reiniciar e atualizar</button>
+      </div>
+    </div>
+  </div>
+  <div id="toast" role="status"></div>
+  <script type="module" src="app.js"></script>
+</body>
+</html>

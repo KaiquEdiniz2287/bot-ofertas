@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import logging
 import sys
 import traceback
@@ -121,19 +120,20 @@ class DesktopService:
     async def _exclusive(self, label: str, function, *args, ml_profile=False):
         if self._action_lock.locked() or (ml_profile and self._ml_lock.locked()):
             raise PublicError("Já existe uma operação em andamento.")
-        async with self._action_lock:
-            lock = self._ml_lock if ml_profile else contextlib.nullcontext()
-            if ml_profile:
-                await lock.acquire()
-            self._emit_state()
-            self.emitter.log("INFO", "ação", f"{label} iniciada.")
-            try:
-                return await asyncio.to_thread(function, *args)
-            finally:
+        ml_acquired = False
+        try:
+            async with self._action_lock:
                 if ml_profile:
-                    lock.release()
-                self.emitter.log("INFO", "ação", f"{label} concluída.")
+                    await self._ml_lock.acquire()
+                    ml_acquired = True
                 self._emit_state()
+                self.emitter.log("INFO", "ação", f"{label} iniciada.")
+                return await asyncio.to_thread(function, *args)
+        finally:
+            if ml_acquired:
+                self._ml_lock.release()
+            self.emitter.log("INFO", "ação", f"{label} concluída.")
+            self._emit_state()
 
     async def _run_cycle(self, payload):
         if not payload.get("confirmed"):
@@ -141,16 +141,18 @@ class DesktopService:
         reload_config()
         if self._action_lock.locked():
             raise PublicError("Já existe uma operação em andamento.")
-        async with self._action_lock:
+        try:
+            async with self._action_lock:
+                self._emit_state()
+                if self.runtime.running:
+                    posted = await pipeline.executar_ciclo(self.runtime.bot)
+                else:
+                    bot = Bot(config.bot_token)
+                    async with bot:
+                        posted = await pipeline.executar_ciclo(bot)
+                return {"posted": posted}
+        finally:
             self._emit_state()
-            if self.runtime.running:
-                posted = await pipeline.executar_ciclo(self.runtime.bot)
-            else:
-                bot = Bot(config.bot_token)
-                async with bot:
-                    posted = await pipeline.executar_ciclo(bot)
-            self._emit_state()
-            return {"posted": posted}
 
     async def _test_source(self, payload):
         source = payload.get("source")

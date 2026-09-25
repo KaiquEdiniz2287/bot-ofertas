@@ -131,7 +131,6 @@ async fn restart_app(app: tauri::AppHandle) {
         .request("shutdown".into(), serde_json::json!({}))
         .await;
     backend.kill();
-    drop(backend);
     app.restart();
 }
 

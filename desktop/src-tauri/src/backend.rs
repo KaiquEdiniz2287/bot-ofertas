@@ -94,6 +94,25 @@ impl Backend {
                     }
                 }
             }
+
+            let backend = app_out.state::<Backend>();
+            let pending = std::mem::take(&mut *backend.pending.lock().unwrap());
+            for (_, sender) in pending {
+                let _ = sender.send(serde_json::json!({
+                    "type": "response",
+                    "ok": false,
+                    "error": "Backend desconectado."
+                }));
+            }
+            let _ = app_out.emit(
+                "backend://state",
+                serde_json::json!({
+                    "connected": false,
+                    "ready": false,
+                    "botRunning": false,
+                    "actionRunning": false
+                }),
+            );
         });
         let app_err = app.clone();
         std::thread::spawn(move || {

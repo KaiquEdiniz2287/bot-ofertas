@@ -1,3 +1,20 @@
+# 0.4.2 — Operação estável e interface reorganizada
+
+- Ações manuais agora retornam corretamente ao estado disponível, inclusive quando ocorre uma falha.
+- O console ao vivo preserva a posição de leitura e acompanha novas mensagens somente quando já está no final.
+- Mensagens de log idênticas e consecutivas são agrupadas para evitar uma enxurrada visual de erros repetidos.
+- A desconexão do backend libera imediatamente as operações pendentes e atualiza o estado do aplicativo.
+- Interface reorganizada com hierarquia visual mais clara, navegação consistente, cartões de operação e configurações responsivas.
+- Adicionados testes de regressão para o estado das ações e o agrupamento dos logs.
+
+## Versionamento
+
+Versão: 0.4.1 → 0.4.2
+Tipo: PATCH
+Motivo: correções de estabilidade e melhorias visuais compatíveis, sem remover funcionalidades.
+
+---
+
 # 0.4.1 — Inicialização opcional e ícone da bandeja
 
 - Salvar configurações não tenta mais desativar a inicialização com o Windows quando ela já está desativada.

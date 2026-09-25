@@ -1,6 +1,6 @@
 {
   "name": "bot-ofertas",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "private": true,
   "scripts": {
     "start": "npm --prefix desktop start",
