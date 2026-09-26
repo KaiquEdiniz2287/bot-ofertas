@@ -2,6 +2,7 @@
 qualquer link colado (ML/Shopee/Amazon) em post com o seu link de afiliado.
 """
 import asyncio
+import datetime as dt
 import logging
 import secrets
 
@@ -62,7 +63,9 @@ async def _cmd_ciclo(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not _e_dono(update):
         return
     await update.message.reply_text("🔄 Rodando um ciclo de busca...")
-    postadas = await pipeline.executar_ciclo(ctx.bot)
+    postadas = await pipeline.executar_ciclo(
+        ctx.bot, ctx.application.bot_data.get("whatsapp"), ctx.application.bot_data.get("state_callback")
+    )
     await update.message.reply_text(f"✅ Ciclo terminou: {postadas} oferta(s) postada(s).")
 
 
@@ -150,17 +153,30 @@ async def _callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 async def _job_ciclo(ctx: ContextTypes.DEFAULT_TYPE):
     try:
-        await pipeline.executar_ciclo(ctx.bot)
+        await pipeline.executar_ciclo(
+            ctx.bot, ctx.application.bot_data.get("whatsapp"), ctx.application.bot_data.get("state_callback")
+        )
     except Exception as e:
         log.exception("Ciclo automático falhou")
         await pipeline.avisar_dono(ctx.bot, f"⚠️ O ciclo automático falhou: {type(e).__name__}: {e}")
+    finally:
+        callback = ctx.application.bot_data.get("state_callback")
+        proximo = dt.datetime.now() + dt.timedelta(minutes=config.intervalo_minutos)
+        if callback:
+            callback({"nextCycleAt": proximo.isoformat(timespec="seconds"), "pauseUntil": None})
+        log.info(
+            "Próximo ciclo automático em %d minuto(s), previsto para %s.",
+            config.intervalo_minutos, proximo.strftime("%H:%M:%S"),
+        )
 
 
-def criar_aplicacao() -> Application:
+def criar_aplicacao(whatsapp=None, state_callback=None) -> Application:
     if not config.bot_token:
         raise SystemExit("TELEGRAM_BOT_TOKEN não configurado — veja o README (passo 1).")
 
     app = Application.builder().token(config.bot_token).build()
+    app.bot_data["whatsapp"] = whatsapp
+    app.bot_data["state_callback"] = state_callback
     app.add_handler(CommandHandler("start", _cmd_start))
     app.add_handler(CommandHandler("id", _cmd_id))
     app.add_handler(CommandHandler("status", _cmd_status))
@@ -175,7 +191,13 @@ def criar_aplicacao() -> Application:
                     (config.fonte_ml, config.fonte_shopee, config.fonte_amazon))
     if tem_fonte and config.intervalo_minutos > 0 and config.chat_id:
         app.job_queue.run_repeating(_job_ciclo, interval=config.intervalo_minutos * 60, first=30)
-        log.info("Ciclo automático a cada %d min", config.intervalo_minutos)
+        primeiro = dt.datetime.now() + dt.timedelta(seconds=30)
+        if state_callback:
+            state_callback({"nextCycleAt": primeiro.isoformat(timespec="seconds")})
+        log.info(
+            "Ciclo automático ativo a cada %d minuto(s). Primeira busca prevista para %s.",
+            config.intervalo_minutos, primeiro.strftime("%H:%M:%S"),
+        )
     else:
         log.info("Ciclo automático desligado (sem fonte ativa ou sem CHAT_ID)")
 
@@ -185,8 +207,10 @@ def criar_aplicacao() -> Application:
 class BotRuntime:
     """Ciclo de vida assíncrono usado pela interface desktop."""
 
-    def __init__(self, factory=criar_aplicacao):
+    def __init__(self, factory=criar_aplicacao, whatsapp=None, state_callback=None):
         self._factory = factory
+        self._whatsapp = whatsapp
+        self._state_callback = state_callback
         self._app = None
         self._lock = asyncio.Lock()
 
@@ -202,7 +226,10 @@ class BotRuntime:
         async with self._lock:
             if self._app is not None:
                 return False
-            app = self._factory()
+            try:
+                app = self._factory(self._whatsapp, self._state_callback)
+            except TypeError:
+                app = self._factory()
             initialized = polling = started = False
             try:
                 await app.initialize()
@@ -230,6 +257,8 @@ class BotRuntime:
             await app.updater.stop()
             await app.stop()
             await app.shutdown()
+            if self._state_callback:
+                self._state_callback({"nextCycleAt": None, "pauseUntil": None})
             return True
 
 

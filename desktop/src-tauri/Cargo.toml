@@ -1,6 +1,6 @@
 [package]
 name = "bot-ofertas-desktop"
-version = "0.4.2"
+version = "0.5.0"
 description = "Aplicativo desktop do Bot de Ofertas"
 edition = "2021"
 

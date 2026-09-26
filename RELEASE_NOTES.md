@@ -1,3 +1,23 @@
+# 0.5.0 — Integração opcional com WhatsApp
+
+- Adicionada integração local com WhatsApp Business por QR Code, usando uma ponte Baileys empacotada para Windows x64.
+- A mesma seleção de ofertas do Telegram pode ser enviada a um grupo do WhatsApp, sem duplicar coleta ou geração de links.
+- Telegram e WhatsApp possuem entregas independentes: falhas do WhatsApp não interrompem o canal já existente.
+- Ofertas não entregues ficam pendentes por seis horas e somente são reenviadas por ação manual individual, com limite de cinco tentativas manuais.
+- Nova área do WhatsApp com estado da conexão, QR Code, conta mascarada, carregamento de grupos, teste e remoção da sessão.
+- Visão geral mostra conexão, pendências, próxima execução e contagem regressiva das pausas.
+- Console agora informa duração das pausas, horário previsto de retomada, resultado por canal e pendências sem repetir envios automaticamente.
+- Adicionados comandos `npm run whatsapp:test` e `npm run whatsapp:build`.
+- Instalador inclui os backends Python e WhatsApp, sem exigir Node.js na máquina de destino.
+
+## Versionamento
+
+Versão: 0.4.2 → 0.5.0
+Tipo: MINOR
+Motivo: nova integração opcional com WhatsApp, fila manual e controles de interface, mantendo compatibilidade com o Telegram.
+
+---
+
 # 0.4.2 — Operação estável e interface reorganizada
 
 - Ações manuais agora retornam corretamente ao estado disponível, inclusive quando ocorre uma falha.

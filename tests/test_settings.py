@@ -63,6 +63,25 @@ class SettingsTests(unittest.TestCase):
             self.assertEqual(values["AMAZON_CREDENTIAL_SECRET"], "credencial-secreta")
             self.assertFalse(yaml_path.exists())
 
+    def test_salva_preferencias_do_whatsapp(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with patch.multiple(
+                settings,
+                ENV_PATH=root / ".env",
+                YAML_PATH=root / "config.yaml",
+                NICHOS_PATH=root / "nichos.json",
+                APP_PATH=root / "app.json",
+            ):
+                settings.write_settings({"preferences": {
+                    "whatsappEnabled": True,
+                    "whatsappGroupJid": "123456@g.us",
+                    "whatsappGroupName": "Família & Ofertas",
+                }})
+                saved = settings.read_settings()["preferences"]
+            self.assertTrue(saved["whatsappEnabled"])
+            self.assertEqual(saved["whatsappGroupName"], "Família & Ofertas")
+
 
 if __name__ == "__main__":
     unittest.main()

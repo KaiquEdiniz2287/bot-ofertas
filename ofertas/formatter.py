@@ -29,3 +29,18 @@ def montar_caption(o: Oferta) -> str:
 
     linhas += ["", _PLATAFORMA.get(o.plataforma, o.plataforma)]
     return "\n".join(linhas)
+
+
+def montar_whatsapp(o: Oferta) -> str:
+    linhas = [f"🔥 *{o.titulo[:180]}*", ""]
+    if o.preco and o.preco_original and o.preco_original > o.preco:
+        linhas.append(f"❌ De: ~{preco_br(o.preco_original)}~")
+        selo = f"  🔻 *-{o.desconto}%*" if o.desconto else ""
+        linhas.append(f"✅ Por: *{preco_br(o.preco)}*{selo}")
+    elif o.preco:
+        selo = f"  🔻 *-{o.desconto}%*" if o.desconto else ""
+        linhas.append(f"✅ *{preco_br(o.preco)}*{selo}")
+    if o.extra:
+        linhas.append(o.extra)
+    linhas += ["", _PLATAFORMA.get(o.plataforma, o.plataforma), "", f"🛒 {o.url_afiliado}"]
+    return "\n".join(linhas)

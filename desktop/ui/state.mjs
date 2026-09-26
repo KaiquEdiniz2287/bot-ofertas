@@ -1,5 +1,5 @@
 export function createState() {
-  return { connected:false, botRunning:false, actionRunning:false, ready:false, logs:[], page:"overview", settings:null, history:[] };
+  return { connected:false, botRunning:false, actionRunning:false, ready:false, logs:[], page:"overview", settings:null, history:[], whatsappStatus:"DISCONNECTED", whatsappAccount:"", whatsappQr:"", whatsappGroups:[], pending:[], pauseUntil:null, nextCycleAt:null };
 }
 export function appendLog(state, log) {
   const logs=[...state.logs], last=logs.at(-1);

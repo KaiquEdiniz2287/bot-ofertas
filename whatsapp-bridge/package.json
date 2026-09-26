@@ -1,0 +1,24 @@
+{
+  "name": "bot-ofertas-whatsapp-bridge",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Bridge local e restrito entre o backend Python e o WhatsApp",
+  "main": "index.cjs",
+  "scripts": {
+    "start": "node index.cjs",
+    "test": "node --test test/*.test.cjs",
+    "build": "pkg index.cjs --target node22-win-x64 --output ../dist/bot-ofertas-whatsapp.exe"
+  },
+  "dependencies": {
+    "@hapi/boom": "9.1.4",
+    "@whiskeysockets/baileys": "6.7.24",
+    "pino": "9.6.0",
+    "qrcode": "1.5.4"
+  },
+  "devDependencies": {
+    "@yao-pkg/pkg": "6.22.0"
+  },
+  "pkg": {
+    "scripts": ["index.cjs"]
+  }
+}

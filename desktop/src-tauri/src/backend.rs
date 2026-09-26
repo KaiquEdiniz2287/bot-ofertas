@@ -42,11 +42,19 @@ impl Backend {
         };
         let data_dir = app.path().app_local_data_dir().map_err(|e| e.to_string())?;
         std::fs::create_dir_all(&data_dir).map_err(|e| e.to_string())?;
+        let whatsapp_bridge = app
+            .path()
+            .resource_dir()
+            .map_err(|e| e.to_string())?
+            .join("bot-ofertas-whatsapp.exe");
         command
             .env("BOT_OFERTAS_HOME", data_dir)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
+        if whatsapp_bridge.exists() {
+            command.env("BOT_OFERTAS_WHATSAPP_BRIDGE", whatsapp_bridge);
+        }
         #[cfg(windows)]
         {
             use std::os::windows::process::CommandExt;
@@ -143,6 +151,12 @@ impl Backend {
             "start_ml_login",
             "get_history",
             "import_legacy_data",
+            "whatsapp_connect",
+            "whatsapp_groups",
+            "whatsapp_logout",
+            "whatsapp_test",
+            "get_pending_deliveries",
+            "retry_delivery",
             "shutdown",
         ];
         if !ALLOWED.contains(&command.as_str()) {

@@ -40,3 +40,12 @@ test("exibe versão e mantém a atualização disponível para decisão", () => 
   assert.doesNotMatch(check, /download_and_install/);
   assert.match(app, /update-badge.*classList\.remove\("hidden"\)/s);
 });
+
+test("mostra integração do WhatsApp, pendências manuais e pausas", () => {
+  assert.match(html, /data-page="whatsapp"/);
+  assert.match(app, /Enviar também ao WhatsApp/);
+  assert.match(app, /nunca são reenviadas sozinhas/);
+  assert.match(app, /data-retry-uid/);
+  assert.match(app, /data-countdown="pause"/);
+  assert.match(css, /\.qr-panel/);
+});

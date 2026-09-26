@@ -1,4 +1,5 @@
 import asyncio
+import datetime as dt
 import logging
 import re
 
@@ -9,6 +10,8 @@ from .config import config, dentro_do_horario
 from .models import Oferta
 from .sources import amazon, mercadolivre, shopee
 from .telegram_poster import postar_oferta
+from .formatter import montar_whatsapp
+from .settings import read_settings
 
 log = logging.getLogger("ofertas.pipeline")
 
@@ -105,7 +108,19 @@ async def avisar_dono(bot: Bot, texto: str) -> None:
         log.warning("Não consegui avisar o dono: %s", e)
 
 
-async def executar_ciclo(bot: Bot) -> int:
+def _informar_estado(callback, **updates) -> None:
+    if callback:
+        callback(updates)
+
+
+def _duracao(segundos: int) -> str:
+    if segundos < 60:
+        return f"{segundos} segundo(s)"
+    minutos, resto = divmod(segundos, 60)
+    return f"{minutos} minuto(s)" + (f" e {resto} segundo(s)" if resto else "")
+
+
+async def executar_ciclo(bot: Bot, whatsapp=None, state_callback=None) -> int:
     """Um ciclo completo: coletar -> filtrar -> escolher -> gerar links -> postar. Retorna nº de posts."""
     if not dentro_do_horario():
         log.info("Fora do horário ativo (%s) — ciclo pulado", config.horario_ativo)
@@ -125,20 +140,70 @@ async def executar_ciclo(bot: Bot) -> int:
             if "Sessão" in str(e):
                 await avisar_dono(bot, f"⚠️ Mercado Livre parou de gerar links: {e}")
 
+    preferences = read_settings(False).get("preferences") or {}
+    whatsapp_enabled = bool(preferences.get("whatsappEnabled"))
+    whatsapp_group = str(preferences.get("whatsappGroupJid") or "")
     postadas = 0
-    for o in escolhidas:
+    enviadas_whatsapp = 0
+    for index, o in enumerate(escolhidas):
         if not o.url_afiliado:
             log.warning("Sem link de afiliado, pulando: %s", o.titulo[:60])
             continue
+
+        nova_entrega_whatsapp = False
+        if whatsapp_enabled and whatsapp_group:
+            nova_entrega_whatsapp = db.preparar_entrega_whatsapp(o, whatsapp_group)
+
         try:
             await postar_oferta(bot, o, config.chat_id)
         except Exception as e:
-            log.error("Falha ao postar '%s': %s", o.titulo[:60], e)
-            continue
-        db.registrar(o)
-        postadas += 1
-        if o is not escolhidas[-1]:
-            await asyncio.sleep(config.espacamento_segundos)
+            log.error("Telegram: falha ao publicar '%s': %s", o.titulo[:60], e)
+        else:
+            db.registrar(o)
+            postadas += 1
+            log.info("Telegram: oferta publicada — %s", o.titulo[:60])
 
-    log.info("Ciclo: %d coletadas, %d aprovadas, %d postadas", len(brutas), len(boas), postadas)
+        if whatsapp_enabled and whatsapp_group and nova_entrega_whatsapp:
+            if whatsapp and whatsapp.connected:
+                try:
+                    message_id = await whatsapp.send_offer(
+                        whatsapp_group, montar_whatsapp(o), o.imagem
+                    )
+                except Exception as e:
+                    db.marcar_entrega_whatsapp(o.uid, whatsapp_group, False, str(e))
+                    log.error(
+                        "WhatsApp: não foi possível enviar '%s'. A oferta ficou pendente para tentativa manual: %s",
+                        o.titulo[:60], e,
+                    )
+                else:
+                    db.marcar_entrega_whatsapp(o.uid, whatsapp_group, True, message_id)
+                    enviadas_whatsapp += 1
+                    log.info("WhatsApp: oferta enviada — %s", o.titulo[:60])
+            else:
+                log.warning(
+                    "WhatsApp desconectado: '%s' ficou pendente. O aplicativo não tentará reenviar sozinho.",
+                    o.titulo[:60],
+                )
+
+        if index < len(escolhidas) - 1 and config.espacamento_segundos > 0:
+            retoma = dt.datetime.now() + dt.timedelta(seconds=config.espacamento_segundos)
+            _informar_estado(state_callback, pauseUntil=retoma.isoformat(timespec="seconds"))
+            log.info(
+                "Pausa entre ofertas: %s. Próximo envio previsto para %s.",
+                _duracao(config.espacamento_segundos), retoma.strftime("%H:%M:%S"),
+            )
+            await asyncio.sleep(config.espacamento_segundos)
+            _informar_estado(state_callback, pauseUntil=None)
+            log.info("Pausa concluída. Retomando os envios.")
+
+    pendentes = db.total_pendentes_whatsapp() if whatsapp_enabled else 0
+    log.info(
+        "Ciclo concluído: %d coletada(s), %d aprovada(s), %d publicada(s) no Telegram e %d enviada(s) ao WhatsApp.",
+        len(brutas), len(boas), postadas, enviadas_whatsapp,
+    )
+    if pendentes:
+        log.warning(
+            "%d oferta(s) do WhatsApp aguardam envio manual. Abra Pendências e escolha quando tentar novamente.",
+            pendentes,
+        )
     return postadas

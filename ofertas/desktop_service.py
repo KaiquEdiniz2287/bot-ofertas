@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import datetime as dt
 import logging
 import sys
 import traceback
@@ -15,6 +16,8 @@ from .bot_interativo import BotRuntime
 from .config import DATA_DIR, config, reload_config
 from .desktop_protocol import JsonEmitter, ProtocolError, PublicError, parse_request, sanitize
 from .settings import read_settings, write_settings
+from .formatter import montar_whatsapp
+from .whatsapp_bridge import WhatsAppBridge, WhatsAppError
 
 
 class _ProtocolLogHandler(logging.Handler):
@@ -48,7 +51,12 @@ class _LineRedirector:
 class DesktopService:
     def __init__(self, emitter: JsonEmitter, runtime: BotRuntime | None = None):
         self.emitter = emitter
-        self.runtime = runtime or BotRuntime()
+        self._runtime_state = {"pauseUntil": None, "nextCycleAt": None}
+        self._last_whatsapp_status = "DISCONNECTED"
+        self.whatsapp = WhatsAppBridge(self._on_whatsapp_event)
+        self.runtime = runtime or BotRuntime(
+            whatsapp=self.whatsapp, state_callback=self._update_runtime_state
+        )
         self._action_lock = asyncio.Lock()
         self._ml_lock = asyncio.Lock()
         self._shutdown = False
@@ -64,8 +72,43 @@ class DesktopService:
             "start_ml_login": self._start_ml_login,
             "get_history": self._get_history,
             "import_legacy_data": self._import_legacy_data,
+            "whatsapp_connect": self._whatsapp_connect,
+            "whatsapp_groups": self._whatsapp_groups,
+            "whatsapp_logout": self._whatsapp_logout,
+            "whatsapp_test": self._whatsapp_test,
+            "get_pending_deliveries": self._get_pending_deliveries,
+            "retry_delivery": self._retry_delivery,
             "shutdown": self._shutdown_service,
         }
+
+    def _update_runtime_state(self, updates: dict) -> None:
+        self._runtime_state.update(updates)
+        self._emit_state()
+
+    def _on_whatsapp_event(self, event: str, payload: dict) -> None:
+        if event == "connection_state":
+            status = str(payload.get("status") or "DISCONNECTED")
+            labels = {
+                "CONNECTING": "conectando",
+                "AWAITING_QR": "aguardando leitura do QR Code",
+                "CONNECTED": "conectado",
+                "DISCONNECTED": "desconectado",
+                "LOGGED_OUT": "sessão removida",
+            }
+            self.emitter.log("INFO", "WhatsApp", f"Estado da conexão: {labels.get(status, status)}.")
+            detail = str(payload.get("detail") or "").strip()
+            if detail:
+                self.emitter.log("WARNING", "WhatsApp", detail)
+            if status == "CONNECTED" and self._last_whatsapp_status != "CONNECTED":
+                pending = db.total_pendentes_whatsapp()
+                if pending:
+                    self.emitter.log(
+                        "WARNING", "WhatsApp",
+                        f"Há {pending} oferta(s) pendente(s). Elas não serão reenviadas automaticamente; use Pendências quando desejar.",
+                    )
+            self._last_whatsapp_status = status
+        self.emitter.emit({"type": "whatsapp", "event": event, **payload})
+        self._emit_state()
 
     async def handle(self, request: dict) -> dict:
         request_id = request.get("id")
@@ -88,6 +131,10 @@ class DesktopService:
             "actionRunning": self._action_lock.locked(),
             "dataDir": str(DATA_DIR),
             "ready": bool(config.bot_token and config.chat_id and config.owner_id),
+            "whatsappStatus": self.whatsapp.status,
+            "whatsappAccount": self.whatsapp.account,
+            "pendingDeliveries": db.total_pendentes_whatsapp(),
+            **self._runtime_state,
         }
 
     def _emit_state(self) -> dict:
@@ -108,6 +155,15 @@ class DesktopService:
 
     async def _start_bot(self, _):
         reload_config()
+        preferences = (await asyncio.to_thread(read_settings, False)).get("preferences") or {}
+        if preferences.get("whatsappEnabled"):
+            try:
+                await self.whatsapp.connect()
+            except WhatsAppError as exc:
+                self.emitter.log(
+                    "ERROR", "WhatsApp",
+                    f"Não foi possível conectar: {exc} O Telegram continuará funcionando normalmente.",
+                )
         started = await self.runtime.start()
         self._emit_state()
         return {"started": started}
@@ -145,11 +201,15 @@ class DesktopService:
             async with self._action_lock:
                 self._emit_state()
                 if self.runtime.running:
-                    posted = await pipeline.executar_ciclo(self.runtime.bot)
+                    posted = await pipeline.executar_ciclo(
+                        self.runtime.bot, self.whatsapp, self._update_runtime_state
+                    )
                 else:
                     bot = Bot(config.bot_token)
                     async with bot:
-                        posted = await pipeline.executar_ciclo(bot)
+                        posted = await pipeline.executar_ciclo(
+                            bot, self.whatsapp, self._update_runtime_state
+                        )
                 return {"posted": posted}
         finally:
             self._emit_state()
@@ -204,9 +264,64 @@ class DesktopService:
         reload_config()
         return asdict(report)
 
+    async def _whatsapp_connect(self, _):
+        result = await self.whatsapp.connect()
+        self._emit_state()
+        return result
+
+    async def _whatsapp_groups(self, _):
+        if not self.whatsapp.connected:
+            raise PublicError("Conecte o WhatsApp antes de carregar os grupos.")
+        return {"groups": await self.whatsapp.list_groups()}
+
+    async def _whatsapp_logout(self, _):
+        await self.whatsapp.logout()
+        self._emit_state()
+        return {"loggedOut": True}
+
+    async def _whatsapp_test(self, payload):
+        group_jid = str(payload.get("groupJid") or "")
+        if not self.whatsapp.connected:
+            raise PublicError("Conecte o WhatsApp antes de enviar o teste.")
+        await self.whatsapp.send_test(group_jid)
+        self.emitter.log("INFO", "WhatsApp", "Mensagem de teste enviada ao grupo selecionado.")
+        return {"sent": True}
+
+    async def _get_pending_deliveries(self, _):
+        return {"items": await asyncio.to_thread(db.listar_pendentes_whatsapp)}
+
+    async def _retry_delivery(self, payload):
+        uid = str(payload.get("uid") or "")
+        destination = str(payload.get("destination") or "")
+        delivery = await asyncio.to_thread(db.obter_entrega_whatsapp, uid, destination)
+        if not delivery:
+            raise PublicError("Essa entrega pendente não foi encontrada.")
+        offer, metadata = delivery
+        if metadata["status"] == "sent":
+            raise PublicError("Essa oferta já foi enviada ao WhatsApp.")
+        if int(metadata["tentativas_manuais"]) >= 5:
+            raise PublicError("Essa oferta atingiu o limite de cinco tentativas manuais.")
+        if dt.datetime.fromisoformat(metadata["expira_em"]) <= dt.datetime.now():
+            raise PublicError("Essa oferta expirou e não pode mais ser reenviada.")
+        if not self.whatsapp.connected:
+            raise PublicError("Conecte o WhatsApp antes de tentar o envio novamente.")
+        try:
+            message_id = await self.whatsapp.send_offer(
+                destination, montar_whatsapp(offer), offer.imagem
+            )
+        except Exception as exc:
+            await asyncio.to_thread(db.marcar_entrega_whatsapp, uid, destination, False, str(exc), True)
+            self._emit_state()
+            raise PublicError(f"O envio falhou e continua pendente: {exc}") from exc
+        await asyncio.to_thread(db.marcar_entrega_whatsapp, uid, destination, True, message_id, True)
+        self.emitter.log("INFO", "WhatsApp", f"Oferta pendente enviada manualmente: {offer.titulo[:60]}")
+        self._emit_state()
+        return {"sent": True}
+
     async def _shutdown_service(self, _):
         self._shutdown = True
         await self.runtime.stop()
+        await self.whatsapp.shutdown()
         return {"shutdown": True}
 
 
@@ -224,6 +339,7 @@ async def _run(emitter: JsonEmitter) -> None:
             response = {"type": "response", "id": None, "ok": False, "error": str(exc)}
         emitter.emit(response)
     await service.runtime.stop()
+    await service.whatsapp.shutdown()
 
 
 def run_desktop() -> None:

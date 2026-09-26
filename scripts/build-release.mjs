@@ -9,8 +9,8 @@ const key = join(root, "desktop", "src-tauri", "tauri.key");
 if (!existsSync(key)) throw new Error("Chave privada ausente. Restaure desktop/src-tauri/tauri.key do seu backup.");
 
 const env = { ...process.env };
+env.BOT_OFERTAS_RELEASE = "1";
 env.TAURI_SIGNING_PRIVATE_KEY ||= key;
-env.TAURI_SIGNING_PRIVATE_KEY_PASSWORD ??= "";
 const build = spawnSync("powershell", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", join(root, "scripts", "build-desktop.ps1")], { cwd: root, env, stdio: "inherit" });
 if (build.status !== 0) process.exit(build.status ?? 1);
 

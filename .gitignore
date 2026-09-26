@@ -6,6 +6,8 @@ __pycache__/
 build/
 dist/
 desktop/node_modules/
+whatsapp-bridge/node_modules/
+whatsapp-bridge/dist/
 desktop/src-tauri/target/
 desktop/src-tauri/binaries/
 desktop/src-tauri/tauri.key

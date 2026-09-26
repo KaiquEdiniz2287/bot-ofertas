@@ -200,9 +200,15 @@ def write_settings(payload: dict) -> None:
             raise SettingsError("A seleção de categorias é inválida.")
         _atomic_write(NICHOS_PATH, json.dumps(nichos, ensure_ascii=False))
     if preferences is not None:
+        group_jid = str(preferences.get("whatsappGroupJid") or "").strip()
+        if group_jid and not group_jid.endswith("@g.us"):
+            raise SettingsError("Selecione um grupo válido do WhatsApp.")
         allowed = {
             "startWithWindows": bool(preferences.get("startWithWindows", False)),
             "autoStartBot": bool(preferences.get("autoStartBot", False)),
+            "whatsappEnabled": bool(preferences.get("whatsappEnabled", False)),
+            "whatsappGroupJid": group_jid[:160],
+            "whatsappGroupName": str(preferences.get("whatsappGroupName") or "").strip()[:160],
         }
         _atomic_write(APP_PATH, json.dumps(allowed, ensure_ascii=False, indent=2) + "\n")
 
