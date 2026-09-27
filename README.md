@@ -32,6 +32,7 @@ Instale pelo arquivo `Bot de Ofertas_0.5.1_x64-setup.exe`. O aplicativo abre sem
 - O WhatsApp começa desativado. Para ativar, abra **Configurações → WhatsApp**, conecte pelo QR Code, carregue os grupos, escolha o destino e salve.
 - Se um envio ao WhatsApp falhar, ele fica visível na área **WhatsApp** por até seis horas. O aplicativo não reenvia sozinho; use **Enviar agora** quando quiser, em no máximo cinco tentativas manuais.
 - Se a conexão do WhatsApp cair, o aplicativo tenta recuperá-la até cinco vezes. Sessão removida ou cinco falhas consecutivas devolvem o controle ao botão manual.
+- Falhas conhecidas de descriptografia de mensagens recebidas são resumidas no console sem ocultar erros operacionais nem interferir nos envios.
 - A sessão do WhatsApp fica somente em `%LOCALAPPDATA%\br.com.kaiodiniz.botofertas\data\whatsapp-session` e não entra no instalador.
 
 O instalador ainda não possui assinatura digital e pode exibir um aviso do Windows SmartScreen. Confira a origem do arquivo antes de executá-lo; não é necessário desativar mecanismos de segurança do Windows.

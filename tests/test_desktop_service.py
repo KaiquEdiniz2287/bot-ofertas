@@ -30,6 +30,18 @@ class DesktopServiceTests(unittest.IsolatedAsyncioTestCase):
         states = [event["state"]["actionRunning"] for event in emitter.events if event.get("type") == "state"]
         self.assertEqual(result, "ok")
         self.assertEqual(states, [True, False])
+        self.assertTrue(any("concluída com sucesso" in event.get("message", "") for event in emitter.events))
+
+    async def test_acao_com_erro_nao_e_marcada_como_concluida(self):
+        emitter = CaptureEmitter()
+        service = DesktopService(emitter, RunningRuntime())
+
+        with self.assertRaises(RuntimeError):
+            await service._exclusive("Teste claro", lambda: (_ for _ in ()).throw(RuntimeError("falhou")))
+
+        messages = [event.get("message", "") for event in emitter.events]
+        self.assertTrue(any("Teste claro falhou" in message for message in messages))
+        self.assertFalse(any("concluída com sucesso" in message for message in messages))
 
     async def test_ciclo_emite_estado_livre_mesmo_com_erro(self):
         emitter = CaptureEmitter()

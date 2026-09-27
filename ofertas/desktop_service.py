@@ -127,6 +127,8 @@ class DesktopService:
             }
 
     def _state(self) -> dict:
+        browser_dir = DATA_DIR / "pw-browsers"
+        ml_profile = DATA_DIR / "ml_profile"
         return {
             "connected": True,
             "botRunning": self.runtime.running,
@@ -136,6 +138,10 @@ class DesktopService:
             "whatsappStatus": self.whatsapp.status,
             "whatsappAccount": self.whatsapp.account,
             "pendingDeliveries": db.total_pendentes_whatsapp(),
+            "browserInstalled": bool(list(browser_dir.glob("chromium-*"))),
+            "mlSessionDetected": ml_profile.exists() and any(ml_profile.iterdir()),
+            "cycleIntervalMinutes": config.intervalo_minutos,
+            "postSpacingSeconds": config.espacamento_segundos,
             **self._runtime_state,
         }
 
@@ -179,6 +185,7 @@ class DesktopService:
         if self._action_lock.locked() or (ml_profile and self._ml_lock.locked()):
             raise PublicError("Já existe uma operação em andamento.")
         ml_acquired = False
+        succeeded = False
         try:
             async with self._action_lock:
                 if ml_profile:
@@ -186,11 +193,17 @@ class DesktopService:
                     ml_acquired = True
                 self._emit_state()
                 self.emitter.log("INFO", "ação", f"{label} iniciada.")
-                return await asyncio.to_thread(function, *args)
+                result = await asyncio.to_thread(function, *args)
+                succeeded = True
+                return result
+        except Exception as exc:
+            self.emitter.log("ERROR", "ação", f"{label} falhou: {sanitize(exc)}")
+            raise
         finally:
             if ml_acquired:
                 self._ml_lock.release()
-            self.emitter.log("INFO", "ação", f"{label} concluída.")
+            if succeeded:
+                self.emitter.log("INFO", "ação", f"{label} concluída com sucesso.")
             self._emit_state()
 
     async def _run_cycle(self, payload):
@@ -199,9 +212,11 @@ class DesktopService:
         reload_config()
         if self._action_lock.locked():
             raise PublicError("Já existe uma operação em andamento.")
+        succeeded = False
         try:
             async with self._action_lock:
                 self._emit_state()
+                self.emitter.log("INFO", "ação", "Ciclo manual iniciado; ofertas válidas podem ser publicadas.")
                 if self.runtime.running:
                     posted = await pipeline.executar_ciclo(
                         self.runtime.bot, self.whatsapp, self._update_runtime_state
@@ -212,8 +227,15 @@ class DesktopService:
                         posted = await pipeline.executar_ciclo(
                             bot, self.whatsapp, self._update_runtime_state
                         )
+                succeeded = True
+                self.emitter.log("INFO", "ação", f"Ciclo manual concluído: {posted} oferta(s) publicada(s).")
                 return {"posted": posted}
+        except Exception as exc:
+            self.emitter.log("ERROR", "ação", f"Ciclo manual falhou: {sanitize(exc)}")
+            raise
         finally:
+            if not succeeded:
+                self.emitter.log("INFO", "ação", "O ciclo manual foi encerrado sem concluir.")
             self._emit_state()
 
     async def _test_source(self, payload):

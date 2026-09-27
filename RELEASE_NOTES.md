@@ -1,3 +1,37 @@
+# 0.6.0 — Central de operação e tempos reorganizada
+
+- O botão **Executar ciclo agora** foi movido para a Visão geral, junto dos estados do Telegram e WhatsApp.
+- O Console ganhou uma faixa fixa de tempos com pausa atual, próximo ciclo, intervalo entre ciclos, espaço entre publicações e reconexão do WhatsApp.
+- A área Operação agora explica com clareza o que está em andamento, o que terminou com sucesso e o que falhou.
+- Testes concluídos recebem um visto verde durante a sessão atual do aplicativo.
+- A instalação do Chromium e a presença do perfil local do Mercado Livre são verificadas no computador e exibidas como prontas de forma permanente.
+- Logomarcas locais identificam Mercado Livre, Shopee, Amazon, Telegram, WhatsApp e Chromium sem depender da internet.
+- Mensagens do backend deixaram de registrar uma operação com falha como se ela tivesse sido concluída com sucesso.
+- O layout responsivo foi revisado para manter controles, indicadores e textos legíveis em janelas estreitas.
+
+## Versionamento
+
+Versão: 0.5.3 → 0.6.0
+Tipo: MINOR
+Motivo: adição compatível de uma central de tempos, acompanhamento de operações por sessão e indicadores permanentes de preparo.
+
+---
+
+# 0.5.3 — Diagnóstico estável do WhatsApp
+
+- Centenas de linhas repetidas do libsignal agora são condensadas em um único aviso claro sobre a sessão criptográfica recebida.
+- Nenhuma mensagem, recibo de entrega ou pedido de retransmissão é bloqueado; conexão, autenticação, grupos e envios permanecem inalterados.
+- Outros erros do componente WhatsApp continuam aparecendo normalmente no console.
+- Adicionado teste de regressão para reconhecer somente o diagnóstico repetitivo conhecido.
+
+## Versionamento
+
+Versão: 0.5.2 → 0.5.3
+Tipo: PATCH
+Motivo: correção compatível do excesso de avisos de sessão Signal, sem alterar o protocolo do WhatsApp.
+
+---
+
 # 0.5.2 — Correção da instalação de atualizações
 
 - O backend agora é encerrado e aguardado antes de o instalador substituir os arquivos do aplicativo.

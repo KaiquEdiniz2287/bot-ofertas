@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
 
 const css = readFileSync(new URL("./styles.css", import.meta.url), "utf8");
@@ -48,4 +48,24 @@ test("mostra integração do WhatsApp, pendências manuais e pausas", () => {
   assert.match(app, /data-retry-uid/);
   assert.match(app, /data-countdown="pause"/);
   assert.match(css, /\.qr-panel/);
+});
+
+test("centraliza ciclo, temporizadores e estados das operações", () => {
+  const overview = app.slice(app.indexOf('if(state.page==="overview")'), app.indexOf('if(state.page==="operation")'));
+  const operation = app.slice(app.indexOf('if(state.page==="operation")'), app.indexOf('if(state.page==="console")'));
+  assert.match(overview, /data-action="cycle"/);
+  assert.doesNotMatch(operation, /data-action="cycle"/);
+  assert.match(app, /class="timer-strip/);
+  assert.match(app, /data-countdown="whatsapp"/);
+  assert.match(app, /browserInstalled/);
+  assert.match(app, /mlSessionDetected/);
+  assert.match(app, /Concluído nesta sessão/);
+});
+
+test("usa logomarcas locais das plataformas", () => {
+  for(const name of ["mercadolivre","shopee","amazon","telegram","whatsapp","chrome"]){
+    assert.ok(existsSync(new URL(`./brands/${name}.svg`,import.meta.url)),`${name}.svg não encontrado`);
+  }
+  assert.match(app,/src="brands\/\$\{name\}\.svg"/);
+  assert.match(css,/\.brand-logo/);
 });

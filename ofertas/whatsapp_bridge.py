@@ -15,6 +15,20 @@ from .runtime_paths import PATHS
 
 log = logging.getLogger("ofertas.whatsapp")
 
+_SIGNAL_DECRYPTION_NOISE = (
+    "Failed to decrypt message with any known session",
+    "Session error:SessionError: Over 2000 messages into the future!",
+    "at SessionCipher.",
+    "at async _asyncQueueExecutor ",
+)
+
+
+def _is_signal_decryption_noise(text: str) -> bool:
+    value = text.strip()
+    return value.startswith(_SIGNAL_DECRYPTION_NOISE) or (
+        value.startswith("at ") and "[as awaitable]" in value and "libsignal" in value
+    )
+
 
 class WhatsAppError(RuntimeError):
     pass
@@ -86,10 +100,22 @@ class WhatsAppBridge:
 
     async def _read_stderr(self) -> None:
         assert self._process and self._process.stderr
+        decryption_warning_emitted = False
         while line := await self._process.stderr.readline():
             text = line.decode("utf-8", errors="replace").strip()
-            if text:
-                log.warning("WhatsApp: %s", text)
+            if not text:
+                continue
+            if _is_signal_decryption_noise(text):
+                if not decryption_warning_emitted and (
+                    text.startswith("Failed to decrypt") or "Over 2000 messages" in text
+                ):
+                    log.warning(
+                        "WhatsApp descartou uma mensagem recebida com sessão criptográfica antiga. "
+                        "Os envios continuam ativos; se isso persistir, remova a sessão e conecte o QR Code novamente."
+                    )
+                    decryption_warning_emitted = True
+                continue
+            log.warning("WhatsApp: %s", text)
 
     def _handle_event(self, event: str, payload: dict) -> None:
         if event == "connection_state":
