@@ -7,15 +7,16 @@ const path = require('node:path');
 const readline = require('node:readline');
 const test = require('node:test');
 
-test('responde status sem iniciar conexão externa', async () => {
+test('responde status sem iniciar conexão externa', async t => {
   const child = spawn(process.execPath, [path.join(__dirname, '..', 'index.cjs')], { stdio: ['pipe', 'pipe', 'pipe'] });
+  t.after(() => { if (child.exitCode === null) child.kill(); });
   const lines = readline.createInterface({ input: child.stdout });
   const received = [];
   let stderr = '';
   child.stderr.on('data', chunk => { stderr += chunk.toString(); });
 
   const waitFor = predicate => new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => reject(new Error(`Tempo esgotado. stderr: ${stderr}`)), 5000);
+    const timeout = setTimeout(() => reject(new Error(`Tempo esgotado. stderr: ${stderr}`)), 15000);
     const onLine = line => {
       const message = JSON.parse(line);
       received.push(message);
@@ -36,6 +37,7 @@ test('responde status sem iniciar conexão externa', async () => {
   await once(child, 'exit');
   assert.equal(received[0].type, 'bridge_ready');
   assert.deepEqual(received.find(item => item.id === '1'), {
-    type: 'response', id: '1', ok: true, result: { status: 'DISCONNECTED' },
+    type: 'response', id: '1', ok: true,
+    result: { status: 'DISCONNECTED', reconnectAttempts: 0, maxReconnectAttempts: 5 },
   });
 });

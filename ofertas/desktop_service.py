@@ -92,6 +92,8 @@ class DesktopService:
                 "CONNECTING": "conectando",
                 "AWAITING_QR": "aguardando leitura do QR Code",
                 "CONNECTED": "conectado",
+                "RECONNECTING": "reconectando automaticamente",
+                "RECONNECT_FAILED": "reconexão automática encerrada",
                 "DISCONNECTED": "desconectado",
                 "LOGGED_OUT": "sessão removida",
             }

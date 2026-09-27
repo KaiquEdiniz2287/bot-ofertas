@@ -19,14 +19,18 @@ let socket;
 let connecting;
 let closing = false;
 let status = 'DISCONNECTED';
+let reconnectAttempts = 0;
+let reconnectTimer;
+const MAX_RECONNECT_ATTEMPTS = 5;
+const RECONNECT_DELAYS_MS = [2000, 5000, 10000, 20000, 30000];
 
 function emit(type, payload = {}) {
   process.stdout.write(`${JSON.stringify({ type, ...payload })}\n`);
 }
 
-function setStatus(next, detail = '') {
+function setStatus(next, detail = '', extra = {}) {
   status = next;
-  emit('event', { event: 'connection_state', payload: { status: next, detail } });
+  emit('event', { event: 'connection_state', payload: { status: next, detail, ...extra } });
 }
 
 function safeError(error) {
@@ -42,6 +46,10 @@ function requireConnected() {
 async function connect() {
   if (socket && ['CONNECTED', 'CONNECTING', 'AWAITING_QR'].includes(status)) return { status };
   if (connecting) return connecting;
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = undefined;
+  }
   closing = false;
   fs.mkdirSync(authDirectory, { recursive: true });
   connecting = (async () => {
@@ -68,16 +76,24 @@ async function connect() {
         }
       }
       if (connection === 'open') {
+        reconnectAttempts = 0;
         const id = String(next.user?.id || '').split(':')[0];
         setStatus('CONNECTED');
         emit('event', { event: 'account', payload: { number: id ? `••••${id.slice(-4)}` : '' } });
       }
       if (connection === 'close') {
-        if (socket === next) socket = undefined;
-        const reason = new Boom(lastDisconnect?.error).output?.statusCode;
+        if (socket !== next) return;
+        socket = undefined;
+        const reason = lastDisconnect?.error?.output?.statusCode
+          || new Boom(lastDisconnect?.error).output?.statusCode;
+        const error = safeError(lastDisconnect?.error);
         if (closing) setStatus('DISCONNECTED');
-        else if (reason === DisconnectReason.loggedOut) setStatus('LOGGED_OUT', 'A sessão foi removida pelo WhatsApp.');
-        else setStatus('DISCONNECTED', 'A conexão foi encerrada. Use Reconectar quando desejar.');
+        else if (reason === DisconnectReason.loggedOut) {
+          reconnectAttempts = 0;
+          setStatus('LOGGED_OUT', 'A sessão foi removida pelo WhatsApp. Leia um novo QR Code para conectar novamente.', { reason });
+        } else {
+          scheduleReconnect(reason, error);
+        }
       }
     });
     return { status };
@@ -85,8 +101,46 @@ async function connect() {
   return connecting;
 }
 
+function scheduleReconnect(reason, error) {
+  if (closing || reconnectTimer) return;
+  const plan = reconnectPlan(reconnectAttempts, reason);
+  if (!plan) {
+    setStatus(
+      'RECONNECT_FAILED',
+      `O WhatsApp continuou desconectado após ${MAX_RECONNECT_ATTEMPTS} tentativas. Use Conectar WhatsApp para tentar manualmente. Motivo ${reason || 'desconhecido'}: ${error}`,
+      { reason, attempt: reconnectAttempts, maxAttempts: MAX_RECONNECT_ATTEMPTS },
+    );
+    return;
+  }
+  const { attempt, delay } = plan;
+  reconnectAttempts = attempt;
+  const retryAt = new Date(Date.now() + delay).toISOString();
+  setStatus(
+    'RECONNECTING',
+    `Conexão encerrada (motivo ${reason || 'desconhecido'}: ${error}). Tentativa automática ${attempt}/${MAX_RECONNECT_ATTEMPTS} em ${Math.ceil(delay / 1000)} segundo(s).`,
+    { reason, attempt, maxAttempts: MAX_RECONNECT_ATTEMPTS, retryAt },
+  );
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = undefined;
+    connect().catch(nextError => scheduleReconnect(reason, safeError(nextError)));
+  }, delay);
+}
+
+function reconnectPlan(attempts, reason) {
+  if (attempts >= MAX_RECONNECT_ATTEMPTS) return null;
+  return {
+    attempt: attempts + 1,
+    delay: reason === DisconnectReason.restartRequired ? 0 : RECONNECT_DELAYS_MS[attempts],
+  };
+}
+
 async function disconnect({ logout = false } = {}) {
   closing = true;
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = undefined;
+  }
+  reconnectAttempts = 0;
   const current = socket;
   socket = undefined;
   if (current) {
@@ -130,7 +184,7 @@ async function sendOffer(command) {
 async function handle(command) {
   switch (command.action) {
     case 'connect': return connect();
-    case 'get_status': return { status };
+    case 'get_status': return { status, reconnectAttempts, maxReconnectAttempts: MAX_RECONNECT_ATTEMPTS };
     case 'list_groups': return { groups: await listGroups() };
     case 'send_offer': return sendOffer(command);
     case 'send_test':
@@ -150,7 +204,9 @@ async function shutdown() {
 if (process.argv.includes('--self-test')) {
   QRCode.toDataURL('bot-ofertas-self-test', { width: 32, margin: 0 })
     .then(dataUrl => {
-      emit('self_test', { ok: dataUrl.startsWith('data:image/png;base64,') });
+      const attempts = Array.from({ length: 5 }, (_, index) => reconnectPlan(index, DisconnectReason.connectionLost)?.attempt);
+      const reconnectOk = attempts.join(',') === '1,2,3,4,5' && reconnectPlan(5, DisconnectReason.connectionLost) === null;
+      emit('self_test', { ok: dataUrl.startsWith('data:image/png;base64,') && reconnectOk });
       process.exit(0);
     })
     .catch(error => {

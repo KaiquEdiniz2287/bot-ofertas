@@ -1,9 +1,9 @@
 # Plano de Implementação — Integração com WhatsApp
 
-> **Estado:** v0.5 implementada, empacotada e validada automaticamente; aguardando validação real por QR Code no grupo de teste.  
+> **Estado:** v0.6 implementada e validada automaticamente; reconexão real aguardando observação no uso contínuo.
 > **Regra:** este documento continuará sendo atualizado quando decisões ou limites forem refinados durante a implementação.  
 > **Projeto:** Bot de Ofertas Desktop — Tauri 2, backend Python e Windows x64.  
-> **Versão implementada:** 0.5.0 (MINOR), conforme `.skills/semver-versioning`.  
+> **Versão implementada:** 0.5.1 (PATCH), conforme `.skills/semver-versioning`.
 
 ## 1. Objetivo
 
@@ -431,3 +431,4 @@ A implementação será considerada pronta quando:
 - **v0.3 — 25/09/2026:** plano aprovado para implementação; pendências passam a exigir reenvio manual individual, expiram em seis horas e o console deverá explicar pausas e retomadas com clareza.
 - **v0.4 — 25/09/2026:** bridge Baileys empacotado, fila SQLite, integração Python/Tauri, QR e grupos na interface, reenvio exclusivamente manual, contadores de pausa, testes automatizados e build Windows implementados; vínculo e envio reais permanecem para validação assistida no grupo de teste.
 - **v0.5 — 25/09/2026:** versão 0.5.0 sincronizada, 22 testes Python, 9 testes de interface, protocolo Node, auto-testes dos executáveis e testes Rust aprovados; instalador Windows x64 gerado sem depender de Node.js global. O build comum não exige mais a chave do updater; assinatura e `latest.json` permanecem exclusivas de `npm run release`.
+- **v0.6 — 26/09/2026:** corrigido o encerramento definitivo após quedas transitórias; adicionadas cinco tentativas automáticas com espera progressiva, diagnóstico do motivo e retorno seguro ao modo manual para sessão removida ou limite atingido.

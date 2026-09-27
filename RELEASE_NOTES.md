@@ -1,3 +1,19 @@
+# 0.5.1 — Reconexão automática do WhatsApp
+
+- Corrigida a desconexão definitiva após quedas transitórias do WhatsApp.
+- O aplicativo agora tenta reconectar automaticamente até cinco vezes, com pausas progressivas de 2, 5, 10, 20 e 30 segundos.
+- Sessões realmente removidas da conta não entram em repetição: o aplicativo solicita uma nova conexão manual.
+- O console passa a informar o código da desconexão, a tentativa atual, o limite e o tempo até a próxima tentativa.
+- Após cinco falhas, a reconexão automática é encerrada e o botão manual volta a ser habilitado.
+
+## Versionamento
+
+Versão: 0.5.0 → 0.5.1
+Tipo: PATCH
+Motivo: correção compatível da permanência e recuperação da conexão existente com o WhatsApp.
+
+---
+
 # 0.5.0 — Integração opcional com WhatsApp
 
 - Adicionada integração local com WhatsApp Business por QR Code, usando uma ponte Baileys empacotada para Windows x64.

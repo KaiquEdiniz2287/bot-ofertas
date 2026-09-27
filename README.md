@@ -21,7 +21,7 @@ Dois modos, no mesmo programa:
 
 ## 🖥️ Aplicativo desktop para Windows (recomendado)
 
-Instale pelo arquivo `Bot de Ofertas_0.5.0_x64-setup.exe`. O aplicativo abre sem terminal externo e reúne configuração, operação, histórico, WhatsApp e logs em uma única janela.
+Instale pelo arquivo `Bot de Ofertas_0.5.1_x64-setup.exe`. O aplicativo abre sem terminal externo e reúne configuração, operação, histórico, WhatsApp e logs em uma única janela.
 
 - Fechar a janela mantém o aplicativo na bandeja do Windows.
 - “Iniciar com o Windows” e “Ligar o bot automaticamente” são opções independentes e vêm desativadas.
@@ -31,6 +31,7 @@ Instale pelo arquivo `Bot de Ofertas_0.5.0_x64-setup.exe`. O aplicativo abre sem
 - O aplicativo procura atualizações assinadas no GitHub automaticamente. Você pode atualizar imediatamente ou adiar; o aviso permanece no rodapé para continuar depois.
 - O WhatsApp começa desativado. Para ativar, abra **Configurações → WhatsApp**, conecte pelo QR Code, carregue os grupos, escolha o destino e salve.
 - Se um envio ao WhatsApp falhar, ele fica visível na área **WhatsApp** por até seis horas. O aplicativo não reenvia sozinho; use **Enviar agora** quando quiser, em no máximo cinco tentativas manuais.
+- Se a conexão do WhatsApp cair, o aplicativo tenta recuperá-la até cinco vezes. Sessão removida ou cinco falhas consecutivas devolvem o controle ao botão manual.
 - A sessão do WhatsApp fica somente em `%LOCALAPPDATA%\br.com.kaiodiniz.botofertas\data\whatsapp-session` e não entra no instalador.
 
 O instalador ainda não possui assinatura digital e pode exibir um aviso do Windows SmartScreen. Confira a origem do arquivo antes de executá-lo; não é necessário desativar mecanismos de segurança do Windows.
@@ -45,7 +46,7 @@ npm test                          # testes da interface
 npm run whatsapp:test             # testes da ponte local do WhatsApp
 npm run whatsapp:build            # gera o executável Windows x64 da ponte
 npm run build                     # testes + backend + instalador
-npm run set-version -- 0.5.0      # sincroniza a versão em todo o projeto
+npm run set-version -- 0.5.1      # sincroniza a versão em todo o projeto
 npm run release                   # build assinado + latest.json do auto-update
 ```
 
