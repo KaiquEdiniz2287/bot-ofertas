@@ -1,3 +1,18 @@
+# 0.5.2 — Correção da instalação de atualizações
+
+- O backend agora é encerrado e aguardado antes de o instalador substituir os arquivos do aplicativo.
+- Corrigido o erro do Windows ao tentar gravar `bot-ofertas-backend.exe` durante uma atualização.
+- O próprio instalador encerra componentes antigos que tenham ficado órfãos, permitindo atualizar diretamente a partir da versão afetada.
+- Se o download ou a abertura do instalador falhar, o aplicativo restaura o backend e o estado anterior do bot.
+
+## Versionamento
+
+Versão: 0.5.1 → 0.5.2
+Tipo: PATCH
+Motivo: correção compatível do ciclo de atualização no Windows, sem alterar as funcionalidades existentes.
+
+---
+
 # 0.5.1 — Reconexão automática do WhatsApp
 
 - Corrigida a desconexão definitiva após quedas transitórias do WhatsApp.

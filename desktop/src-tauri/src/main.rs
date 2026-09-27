@@ -96,8 +96,8 @@ async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
 
     let progress_app = app.clone();
     let mut downloaded = 0_u64;
-    let result = update
-        .download_and_install(
+    let bytes = update
+        .download(
             move |chunk_length, content_length| {
                 downloaded += chunk_length as u64;
                 let percent = content_length
@@ -110,7 +110,27 @@ async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
             || {},
         )
         .await;
-    if let Err(error) = result {
+    let bytes = match bytes {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            if was_running {
+                let _ = backend
+                    .request("start_bot".into(), serde_json::json!({}))
+                    .await;
+            }
+            let message = error.to_string();
+            let _ = app.emit("update-error", &message);
+            return Err(message);
+        }
+    };
+
+    let _ = backend
+        .request("shutdown".into(), serde_json::json!({}))
+        .await;
+    backend.kill();
+
+    if let Err(error) = update.install(bytes) {
+        let _ = backend.start(&app);
         if was_running {
             let _ = backend
                 .request("start_bot".into(), serde_json::json!({}))

@@ -210,8 +210,10 @@ impl Backend {
     }
 
     pub fn kill(&self) {
-        if let Some(child) = self.child.lock().unwrap().as_mut() {
+        self.stdin.lock().unwrap().take();
+        if let Some(mut child) = self.child.lock().unwrap().take() {
             let _ = child.kill();
+            let _ = child.wait();
         }
     }
 }
