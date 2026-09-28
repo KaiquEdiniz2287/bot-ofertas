@@ -117,6 +117,7 @@ PAGINA = r"""<!doctype html>
       <button onclick="acao('testar-ml')">🧪 Testar ML</button>
       <button onclick="acao('testar-shopee')">🧪 Testar Shopee</button>
       <button onclick="acao('testar-amazon')">🧪 Testar Amazon</button>
+      <button onclick="acao('testar-aliexpress')">🧪 Testar AliExpress</button>
     </div>
     <p class="muted" style="margin:10px 0 6px">Saída:</p>
     <div class="log" id="logAcao">—</div>
@@ -148,6 +149,9 @@ const CAMPOS = [
   ["AMAZON_CREDENTIAL_SECRET","Creators API — Secret","Amazon",true,"Opcional. Aparece só uma vez."],
   ["SHOPEE_APP_ID","App ID","Shopee",false,"Painel de afiliados > “Abrir API”."],
   ["SHOPEE_APP_SECRET","App Secret","Shopee",true,"Painel de afiliados > “Abrir API”."],
+  ["ALIEXPRESS_APP_KEY","App Key","AliExpress",false,"Open Platform > Affiliate API."],
+  ["ALIEXPRESS_APP_SECRET","Key Secret","AliExpress",true,"Segredo da aplicação no Open Platform."],
+  ["ALIEXPRESS_TRACKING_ID","Tracking ID","AliExpress",false,"Identificador usado nos links de afiliado."],
 ];
 
 function montarCampos(){

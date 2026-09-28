@@ -5,6 +5,7 @@ from .models import Oferta
 _PLATAFORMA = {
     "mercadolivre": "💛 Mercado Livre",
     "shopee": "🧡 Shopee",
+    "aliexpress": "🛍️ AliExpress",
     "amazon": "📦 Amazon",
 }
 

@@ -23,6 +23,9 @@ test("mantém tabela e ações utilizáveis", () => {
 test("exibe as credenciais da Amazon nas configurações", () => {
   assert.match(app, /field\("AMAZON_CREDENTIAL_ID"/);
   assert.match(app, /field\("AMAZON_CREDENTIAL_SECRET"[^)]*true\)/);
+  assert.match(app, /field\("ALIEXPRESS_APP_KEY"/);
+  assert.match(app, /field\("ALIEXPRESS_APP_SECRET"[^)]*true\)/);
+  assert.match(app, /field\("ALIEXPRESS_TRACKING_ID"/);
 });
 
 test("salvamento trata falha do início com o Windows", () => {
@@ -63,7 +66,7 @@ test("centraliza ciclo, temporizadores e estados das operações", () => {
 });
 
 test("usa logomarcas locais das plataformas", () => {
-  for(const name of ["mercadolivre","shopee","amazon","telegram","whatsapp","chrome"]){
+  for(const name of ["mercadolivre","shopee","amazon","aliexpress","telegram","whatsapp","chrome"]){
     assert.ok(existsSync(new URL(`./brands/${name}.svg`,import.meta.url)),`${name}.svg não encontrado`);
   }
   assert.match(app,/src="brands\/\$\{name\}\.svg"/);

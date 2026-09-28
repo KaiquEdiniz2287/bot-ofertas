@@ -8,7 +8,7 @@ from telegram import Bot
 from . import db
 from .config import config, dentro_do_horario
 from .models import Oferta
-from .sources import amazon, mercadolivre, shopee
+from .sources import aliexpress, amazon, mercadolivre, shopee
 from .telegram_poster import postar_oferta
 from .formatter import montar_whatsapp
 from .settings import read_settings
@@ -37,6 +37,17 @@ def coletar() -> list[Oferta]:
                 log.error("Amazon: %s", e)
         else:
             log.warning("Amazon ativa no config.yaml mas sem AMAZON_TAG no .env — pulando")
+
+    if config.fonte_aliexpress.get("ativa"):
+        if config.aliexpress_app_key and config.aliexpress_app_secret and config.aliexpress_tracking_id:
+            try:
+                todas += aliexpress.buscar_ofertas(int(config.fonte_aliexpress.get("limite", 40)))
+            except Exception as e:
+                log.error("AliExpress: %s", e)
+        else:
+            log.warning(
+                "AliExpress ativo no config.yaml, mas faltam App Key, App Secret ou Tracking ID — pulando"
+            )
 
     if config.fonte_ml.get("ativa"):
         if mercadolivre.tem_sessao():
@@ -139,6 +150,13 @@ async def executar_ciclo(bot: Bot, whatsapp=None, state_callback=None) -> int:
             log.error("Linkbuilder ML falhou: %s", e)
             if "Sessão" in str(e):
                 await avisar_dono(bot, f"⚠️ Mercado Livre parou de gerar links: {e}")
+
+    ali_pendentes = [o for o in escolhidas if o.plataforma == "aliexpress" and not o.url_afiliado]
+    if ali_pendentes:
+        try:
+            await asyncio.to_thread(aliexpress.gerar_links_afiliado, ali_pendentes)
+        except Exception as e:
+            log.error("AliExpress: falha ao gerar links de afiliado: %s", e)
 
     preferences = read_settings(False).get("preferences") or {}
     whatsapp_enabled = bool(preferences.get("whatsappEnabled"))

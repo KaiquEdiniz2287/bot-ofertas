@@ -125,6 +125,7 @@ def expandir(chaves: list[str]) -> dict:
     amazon_dep: dict[str, str] = {}
     amazon_buscas: list[str] = []
     shopee: list[str] = []
+    aliexpress: list[str] = []
     for k in chaves:
         n = NICHOS.get(k)
         if not n:
@@ -137,4 +138,12 @@ def expandir(chaves: list[str]) -> dict:
         for kw in n.get("shopee", []):
             if kw not in shopee:
                 shopee.append(kw)
-    return {"ml": ml, "amazon_dep": amazon_dep, "amazon_buscas": amazon_buscas, "shopee": shopee}
+            if kw not in aliexpress:
+                aliexpress.append(kw)
+    return {
+        "ml": ml,
+        "amazon_dep": amazon_dep,
+        "amazon_buscas": amazon_buscas,
+        "shopee": shopee,
+        "aliexpress": aliexpress,
+    }

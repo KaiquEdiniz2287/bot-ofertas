@@ -1,3 +1,36 @@
+# 0.7.1 — Compatibilidade com a API básica do AliExpress
+
+- Corrigido o erro `isv.appkey-not-exists` ao usar App Keys atuais do AliExpress Open Platform.
+- A integração agora usa o gateway atual, assinatura HMAC-SHA256 e timestamp em milissegundos.
+- A busca geral deixou de exigir `hotproduct.query`, indisponível na API básica, e usa `product.query` ordenado por volume.
+- Validada uma consulta real: ofertas em BRL e links de afiliado foram retornados corretamente.
+
+## Versionamento
+
+Versão: 0.7.0 → 0.7.1
+Tipo: PATCH
+Motivo: correção compatível do gateway e do método de busca para App Keys atuais e acesso básico.
+
+---
+
+# 0.7.0 — Integração de afiliados do AliExpress
+
+- Adicionada busca automática de ofertas do AliExpress por nicho e de produtos em alta pela Affiliate API oficial.
+- As consultas usam português, preços em reais e entrega para o Brasil.
+- Links de produtos colados no bot agora podem ser convertidos em links de afiliado do AliExpress.
+- App Key, Key Secret e Tracking ID podem ser salvos com segurança nas configurações do aplicativo.
+- A área Operação ganhou teste isolado do AliExpress, com logomarca e mensagens claras de permissão ou configuração.
+- Falhas do AliExpress são isoladas e não interrompem Mercado Livre, Shopee, Amazon, Telegram ou WhatsApp.
+- O painel web legado e os comandos de terminal também reconhecem a nova fonte.
+
+## Versionamento
+
+Versão: 0.6.0 → 0.7.0
+Tipo: MINOR
+Motivo: nova integração compatível de marketplace e geração de links de afiliado.
+
+---
+
 # 0.6.0 — Central de operação e tempos reorganizada
 
 - O botão **Executar ciclo agora** foi movido para a Visão geral, junto dos estados do Telegram e WhatsApp.

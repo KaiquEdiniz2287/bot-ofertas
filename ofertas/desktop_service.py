@@ -240,7 +240,7 @@ class DesktopService:
 
     async def _test_source(self, payload):
         source = payload.get("source")
-        if source not in {"ml", "shopee", "amazon"}:
+        if source not in {"ml", "shopee", "amazon", "aliexpress"}:
             raise PublicError("Fonte inválida.")
         if source == "ml" and self.runtime.running:
             raise PublicError("Pare o bot antes de testar o Mercado Livre.")
@@ -253,9 +253,12 @@ class DesktopService:
             elif source == "shopee":
                 from .sources import shopee
                 offers = shopee.buscar_ofertas(10)
-            else:
+            elif source == "amazon":
                 from .sources import amazon
                 offers = amazon.buscar_ofertas()
+            else:
+                from .sources import aliexpress
+                offers = aliexpress.buscar_ofertas(10)
             return [asdict(offer) for offer in offers[:10]]
 
         return {"offers": await self._exclusive(f"Teste {source}", test, ml_profile=source == "ml")}

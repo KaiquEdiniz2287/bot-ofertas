@@ -1,8 +1,8 @@
 # Bot de Ofertas para Telegram e WhatsApp 🔥
 
-Bot que roda **no seu PC** (Windows), garimpa promoções em **Mercado Livre, Shopee e Amazon** e publica no Telegram e, opcionalmente, em um grupo próprio do WhatsApp com **os seus links de afiliado**. Tudo local, sem servidor nem mensalidade.
+Bot que roda **no seu PC** (Windows), garimpa promoções em **Mercado Livre, Shopee, Amazon e AliExpress** e publica no Telegram e, opcionalmente, em um grupo próprio do WhatsApp com **os seus links de afiliado**. Tudo local, sem servidor nem mensalidade.
 
-> ⚠️ Você precisa das **suas próprias** contas de afiliado (Mercado Livre, Amazon Associados, Shopee Afiliados). As comissões vão para quem configurar — cada pessoa usa as suas.
+> ⚠️ Você precisa das **suas próprias** contas de afiliado (Mercado Livre, Amazon Associados, Shopee Afiliados e AliExpress Portals). As comissões vão para quem configurar — cada pessoa usa as suas.
 
 ## Como funciona
 
@@ -16,12 +16,24 @@ Dois modos, no mesmo programa:
 | Mercado Livre | Página de ofertas, filtrada por categoria | API do Linkbuilder do painel (login 1x); gera `meli.la/...` |
 | Shopee | Open API oficial de afiliados (busca por palavra-chave) | A API já devolve o link com sua comissão |
 | Amazon | Creators API; ou, enquanto sua conta não é elegível, ofertas por departamento | Link com a sua tag |
+| AliExpress | Affiliate API oficial, por nicho ou produtos em alta, em português e BRL | A API devolve ou gera o link com seu Tracking ID |
+
+### Integração com o AliExpress
+
+A integração usa chamadas assinadas do Open Platform e não compartilha as credenciais com Telegram ou WhatsApp. O bot utiliza:
+
+- `aliexpress.affiliate.product.query` para buscar ofertas por palavra-chave;
+- `aliexpress.affiliate.product.query`, ordenado por volume, para produtos em alta quando nenhum nicho foi escolhido;
+- `aliexpress.affiliate.productdetail.get` para converter um link colado no bot;
+- `aliexpress.affiliate.link.generate` como garantia para gerar o link rastreável.
+
+As consultas pedem moeda `BRL`, idioma `PT` e destino `BR`. Preencha App Key, Key Secret e Tracking ID em **Configurações → Afiliados** e valide em **Operação → Testar AliExpress** antes de ligar o ciclo automático. Se a aplicação não tiver permissão para algum método, o erro aparece no console e as demais plataformas continuam funcionando.
 
 ---
 
 ## 🖥️ Aplicativo desktop para Windows (recomendado)
 
-Instale pelo arquivo `Bot de Ofertas_0.5.1_x64-setup.exe`. O aplicativo abre sem terminal externo e reúne configuração, operação, histórico, WhatsApp e logs em uma única janela.
+Instale pelo arquivo `Bot de Ofertas_<versão>_x64-setup.exe`. O aplicativo abre sem terminal externo e reúne configuração, operação, histórico, WhatsApp e logs em uma única janela.
 
 - Fechar a janela mantém o aplicativo na bandeja do Windows.
 - “Iniciar com o Windows” e “Ligar o bot automaticamente” são opções independentes e vêm desativadas.
@@ -62,7 +74,7 @@ npm run release                   # build assinado + latest.json do auto-update
 - preenche a configuração (token, IDs, tags) num formulário;
 - descobre os IDs do Telegram com o botão **🔎 Detectar IDs**;
 - instala o navegador e faz o **login do Mercado Livre** por botões;
-- testa as fontes (ML/Shopee/Amazon) e vê as ofertas na hora;
+- testa as fontes (ML/Shopee/Amazon/AliExpress) e vê as ofertas na hora;
 - **liga/desliga o bot** e acompanha o log ao vivo.
 
 Na primeira vez, se o `uv` não estiver instalado, o `PAINEL.bat` instala e pede para você reabrir — só seguir a tela. Antes, tenha em mãos: o **token** do bot (@BotFather), um **canal** com o bot como **administrador**, e suas **contas de afiliado**.
@@ -111,6 +123,8 @@ Preencha (o que você não tiver ainda, deixe em branco e preencha depois):
 - `AMAZON_TAG` — sua tag do [Amazon Associados](https://associados.amazon.com.br) (algo como `seunome-20`).
 - `AMAZON_CREDENTIAL_ID` / `SECRET` — opcional (Creators API). Sem isso o bot funciona mesmo assim.
 - `SHOPEE_APP_ID` / `SHOPEE_APP_SECRET` — no [painel de afiliados Shopee](https://affiliate.shopee.com.br), menu **Abrir API** (a aprovação pode demorar alguns dias).
+- `ALIEXPRESS_APP_KEY` / `ALIEXPRESS_APP_SECRET` — credenciais da aplicação com acesso à Affiliate API no AliExpress Open Platform.
+- `ALIEXPRESS_TRACKING_ID` — identificador da campanha no AliExpress Portals. Ele é obrigatório para os links rastreáveis; não é o App Key.
 
 ### 6. Login no Mercado Livre (uma vez só)
 ```powershell
@@ -165,5 +179,5 @@ ofertas/
 ├── formatter.py       # visual do post
 ├── db.py              # banco anti-repetição
 ├── config.py          # lê .env + config.yaml
-└── sources/           # mercadolivre.py, shopee.py, amazon.py
+└── sources/           # mercadolivre.py, shopee.py, amazon.py, aliexpress.py
 ```

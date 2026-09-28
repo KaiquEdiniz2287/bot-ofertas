@@ -56,3 +56,8 @@ fontes:
     #   - fone bluetooth
     #   - tênis
     #   - panela
+
+  aliexpress:
+    ativa: true
+    limite: 40                 # total de produtos afiliáveis consultados por ciclo
+    buscas: []                 # vazio = produtos em alta; os nichos usam termos equivalentes à Shopee

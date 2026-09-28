@@ -45,6 +45,12 @@ CAMPOS = [
      "Painel de afiliados Shopee > menu 'Abrir API'."),
     ("SHOPEE_APP_SECRET", "App Secret", "Shopee", True,
      "Painel de afiliados Shopee > menu 'Abrir API'."),
+    ("ALIEXPRESS_APP_KEY", "App Key", "AliExpress", False,
+     "Open Platform > Affiliate API."),
+    ("ALIEXPRESS_APP_SECRET", "Key Secret", "AliExpress", True,
+     "Segredo da aplicação no Open Platform."),
+    ("ALIEXPRESS_TRACKING_ID", "Tracking ID", "AliExpress", False,
+     "Identificador de rastreamento usado nos links de afiliado."),
 ]
 CHAVES = [c[0] for c in CAMPOS]
 
@@ -237,6 +243,7 @@ class Handler(BaseHTTPRequestHandler):
                 "testar-ml": (["testar", "ml"], "Testando Mercado Livre"),
                 "testar-shopee": (["testar", "shopee"], "Testando Shopee"),
                 "testar-amazon": (["testar", "amazon"], "Testando Amazon"),
+                "testar-aliexpress": (["testar", "aliexpress"], "Testando AliExpress"),
             }
             if nome not in mapa:
                 return self._json({"erro": "ação desconhecida"}, 400)

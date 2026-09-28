@@ -22,8 +22,13 @@ ENV_KEYS = (
     "AMAZON_CREDENTIAL_SECRET",
     "SHOPEE_APP_ID",
     "SHOPEE_APP_SECRET",
+    "ALIEXPRESS_APP_KEY",
+    "ALIEXPRESS_APP_SECRET",
+    "ALIEXPRESS_TRACKING_ID",
 )
-SECRET_KEYS = frozenset({"TELEGRAM_BOT_TOKEN", "AMAZON_CREDENTIAL_SECRET", "SHOPEE_APP_SECRET"})
+SECRET_KEYS = frozenset({
+    "TELEGRAM_BOT_TOKEN", "AMAZON_CREDENTIAL_SECRET", "SHOPEE_APP_SECRET", "ALIEXPRESS_APP_SECRET"
+})
 SECRET_SET = "__CONFIGURED__"
 
 ENV_PATH = PATHS.config_dir / ".env"
@@ -102,7 +107,8 @@ def write_env(
         ("Telegram", ENV_KEYS[:3]),
         ("Mercado Livre", ENV_KEYS[3:4]),
         ("Amazon", ENV_KEYS[4:7]),
-        ("Shopee", ENV_KEYS[7:]),
+        ("Shopee", ENV_KEYS[7:9]),
+        ("AliExpress", ENV_KEYS[9:12]),
     )
     lines = [
         "# Configuração do bot de ofertas (gerado pelo aplicativo).",

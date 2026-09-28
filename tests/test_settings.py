@@ -31,6 +31,19 @@ class SettingsTests(unittest.TestCase):
             env_path.write_text("SHOPEE_APP_SECRET=ação-secreta\n", encoding="utf-8")
             self.assertEqual(read_env(env_path, mask_secrets=True)["SHOPEE_APP_SECRET"], SECRET_SET)
 
+    def test_credenciais_aliexpress_sao_salvas_e_o_segredo_e_mascarado(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            env_path = Path(tmp) / ".env"
+            write_env(env_path, {
+                "ALIEXPRESS_APP_KEY": "app-key",
+                "ALIEXPRESS_APP_SECRET": "ação-secreta",
+                "ALIEXPRESS_TRACKING_ID": "canal-ofertas",
+            })
+            values = read_env(env_path)
+            masked = read_env(env_path, mask_secrets=True)
+            self.assertEqual(values["ALIEXPRESS_TRACKING_ID"], "canal-ofertas")
+            self.assertEqual(masked["ALIEXPRESS_APP_SECRET"], SECRET_SET)
+
     def test_remocao_de_segredo_e_explicita(self):
         with tempfile.TemporaryDirectory() as tmp:
             env_path = Path(tmp) / ".env"

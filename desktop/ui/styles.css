@@ -230,7 +230,7 @@ main { width: 100%; min-width: 0; padding: 28px clamp(24px, 3.4vw, 48px) 42px; }
 .settings-number { display: grid; place-items: center; width: 30px; height: 30px; flex: none; border: 1px solid #ff653432; border-radius: 9px; background: var(--accent-soft); color: #ff9b7b; font-size: 10px; font-weight: 800; }
 .settings-number.logo-number { border-color: var(--line); background: #fff; }
 .settings-number.logo-number .brand-logo { width: 21px; height: 21px; }
-.settings-number.marketplace-stack { width: 48px; grid-auto-flow: column; gap: 1px; padding: 3px; border-color: var(--line); background: #fff; }
+.settings-number.marketplace-stack { width: 64px; grid-auto-flow: column; gap: 1px; padding: 3px; border-color: var(--line); background: #fff; }
 .branded-heading { display: flex; align-items: center; gap: 13px; }
 .reconnect-notice { margin: -5px 0 16px; padding: 10px 12px; border: 1px solid #f1b84b35; border-radius: 10px; background: #f1b84b0d; color: #b7a278; font-size: 11px; }
 .reconnect-notice strong { color: var(--warning); font-variant-numeric: tabular-nums; }
