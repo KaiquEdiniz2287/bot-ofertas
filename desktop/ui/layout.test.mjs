@@ -6,6 +6,7 @@ const css = readFileSync(new URL("./styles.css", import.meta.url), "utf8");
 const app = readFileSync(new URL("./app.js", import.meta.url), "utf8");
 const html = readFileSync(new URL("./index.html", import.meta.url), "utf8");
 const rust = readFileSync(new URL("../src-tauri/src/main.rs", import.meta.url), "utf8");
+const backend = readFileSync(new URL("../src-tauri/src/backend.rs", import.meta.url), "utf8");
 
 test("contém largura e textos longos sem vazar da janela", () => {
   assert.match(css, /grid-template-columns:\s*230px minmax\(0, 1fr\)/);
@@ -51,6 +52,16 @@ test("mostra integração do WhatsApp, pendências manuais e pausas", () => {
   assert.match(app, /data-retry-uid/);
   assert.match(app, /data-countdown="pause"/);
   assert.match(css, /\.qr-panel/);
+});
+
+test("oferece busca avulsa sem misturar com a operação do bot", () => {
+  assert.match(html, /data-page="search"/);
+  assert.match(app, /request\("search_products",\{query\}\)/);
+  assert.match(app, /Copiar oferta completa/);
+  assert.match(app, /navigator\.clipboard\.writeText\(result\.text\)/);
+  assert.match(app, /não publica, não entra no histórico e não pausa o bot/);
+  assert.match(css, /\.search-results/);
+  assert.equal((backend.match(/"search_products"/g) || []).length, 2);
 });
 
 test("centraliza ciclo, temporizadores e estados das operações", () => {

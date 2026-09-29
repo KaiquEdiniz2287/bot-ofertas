@@ -151,12 +151,12 @@ async def executar_ciclo(bot: Bot, whatsapp=None, state_callback=None) -> int:
             if "Sessão" in str(e):
                 await avisar_dono(bot, f"⚠️ Mercado Livre parou de gerar links: {e}")
 
-    ali_pendentes = [o for o in escolhidas if o.plataforma == "aliexpress" and not o.url_afiliado]
-    if ali_pendentes:
+    ali_escolhidas = [o for o in escolhidas if o.plataforma == "aliexpress" and o.url_produto]
+    if ali_escolhidas:
         try:
-            await asyncio.to_thread(aliexpress.gerar_links_afiliado, ali_pendentes)
+            await asyncio.to_thread(aliexpress.gerar_links_afiliado, ali_escolhidas)
         except Exception as e:
-            log.error("AliExpress: falha ao gerar links de afiliado: %s", e)
+            log.error("AliExpress: falha ao gerar o link curto de afiliado: %s", e)
 
     preferences = read_settings(False).get("preferences") or {}
     whatsapp_enabled = bool(preferences.get("whatsappEnabled"))

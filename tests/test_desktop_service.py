@@ -57,6 +57,23 @@ class DesktopServiceTests(unittest.IsolatedAsyncioTestCase):
         states = [event["state"]["actionRunning"] for event in emitter.events if event.get("type") == "state"]
         self.assertEqual(states, [True, False])
 
+    async def test_busca_manual_funciona_enquanto_operacao_esta_ocupada(self):
+        emitter = CaptureEmitter()
+        service = DesktopService(emitter, RunningRuntime())
+        await service._action_lock.acquire()
+        response = {"query": "fone", "results": [], "errors": []}
+
+        try:
+            with patch("ofertas.desktop_service.reload_config"), patch(
+                "ofertas.product_search.buscar", return_value=response
+            ):
+                result = await service._search_products({"query": "fone"})
+        finally:
+            service._action_lock.release()
+
+        self.assertEqual(result, response)
+        self.assertTrue(any("concluída" in event.get("message", "") for event in emitter.events))
+
 
 if __name__ == "__main__":
     unittest.main()

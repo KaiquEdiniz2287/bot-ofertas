@@ -150,6 +150,7 @@ impl Backend {
             "install_browser",
             "start_ml_login",
             "get_history",
+            "search_products",
             "import_legacy_data",
             "whatsapp_connect",
             "whatsapp_groups",
@@ -181,6 +182,7 @@ impl Backend {
             "test_source",
             "install_browser",
             "start_ml_login",
+            "search_products",
             "import_legacy_data",
         ];
         let timeout = if long_running.contains(&command.as_str()) {

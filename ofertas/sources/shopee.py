@@ -92,6 +92,14 @@ def _buscar_keyword(termo: str, limite: int) -> list[Oferta]:
     return [_node_para_oferta(n) for n in nodes]
 
 
+def buscar_produtos(termo: str, limite: int = 10) -> list[Oferta]:
+    """Busca pontual para a vitrine manual, sem alterar o ciclo automático."""
+    termo = termo.strip()
+    if not termo:
+        return []
+    return _buscar_keyword(termo, min(50, max(1, limite)))
+
+
 def buscar_ofertas(limite: int = 30) -> list[Oferta]:
     """Busca ofertas por palavras-chave tech (config.yaml: fontes.shopee.buscas).
 

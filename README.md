@@ -27,6 +27,8 @@ A integração usa chamadas assinadas do Open Platform e não compartilha as cre
 - `aliexpress.affiliate.productdetail.get` para converter um link colado no bot;
 - `aliexpress.affiliate.link.generate` como garantia para gerar o link rastreável.
 
+Antes da publicação, o link selecionado é normalizado pelo método oficial `link.generate` para o formato curto `s.click.aliexpress.com/e/_...`, mantendo o Tracking ID e a atribuição da comissão.
+
 As consultas pedem moeda `BRL`, idioma `PT` e destino `BR`. Preencha App Key, Key Secret e Tracking ID em **Configurações → Afiliados** e valide em **Operação → Testar AliExpress** antes de ligar o ciclo automático. Se a aplicação não tiver permissão para algum método, o erro aparece no console e as demais plataformas continuam funcionando.
 
 ---
@@ -46,6 +48,7 @@ Instale pelo arquivo `Bot de Ofertas_<versão>_x64-setup.exe`. O aplicativo abre
 - Se a conexão do WhatsApp cair, o aplicativo tenta recuperá-la até cinco vezes. Sessão removida ou cinco falhas consecutivas devolvem o controle ao botão manual.
 - Falhas conhecidas de descriptografia de mensagens recebidas são resumidas no console sem ocultar erros operacionais nem interferir nos envios.
 - A sessão do WhatsApp fica somente em `%LOCALAPPDATA%\br.com.kaiodiniz.botofertas\data\whatsapp-session` e não entra no instalador.
+- A aba **Buscar produtos** consulta as plataformas ativas sem pausar o bot. Ela mostra o melhor resultado afiliado de cada marketplace e copia o texto completo já formatado, sem publicar nem registrar a pesquisa no histórico.
 
 O instalador ainda não possui assinatura digital e pode exibir um aviso do Windows SmartScreen. Confira a origem do arquivo antes de executá-lo; não é necessário desativar mecanismos de segurança do Windows.
 

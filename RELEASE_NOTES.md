@@ -1,3 +1,82 @@
+# 0.8.4 — Links válidos na busca do Mercado Livre
+
+- Corrigida a pesquisa manual quando o Mercado Livre retorna um link intermediário de anúncio.
+- O endereço real do produto agora é extraído antes de solicitar o link de afiliado ao Linkbuilder.
+- Redirecionadores sem um destino válido são ignorados, evitando o erro `URL Invalid`.
+- Amazon e as demais plataformas não foram alteradas.
+
+## Versionamento
+
+Versão: 0.8.3 → 0.8.4
+Tipo: PATCH
+Motivo: correção compatível na normalização dos links encontrados no Mercado Livre.
+
+---
+
+# 0.8.3 — Release sem confirmação de senha vazia
+
+- O comando `npm run release` agora informa explicitamente ao Tauri que a chave local utiliza senha vazia.
+- A assinatura do updater deixa de interromper o build pedindo que o usuário pressione Enter.
+- Uma senha real fornecida por variável de ambiente continua sendo respeitada.
+- A geração do instalador, da assinatura `.sig` e do `latest.json` permanece inalterada.
+
+## Versionamento
+
+Versão: 0.8.2 → 0.8.3
+Tipo: PATCH
+Motivo: correção compatível da execução não interativa do script de release.
+
+---
+
+# 0.8.2 — Pesquisa de produtos liberada no aplicativo
+
+- Corrigido o bloqueio **Operação não permitida** ao pesquisar produtos pela interface desktop.
+- O comando de pesquisa agora está autorizado tanto no Tauri quanto no protocolo do backend Python.
+- Pesquisas demoradas passam a usar o limite estendido de operação, evitando interrupção após 60 segundos.
+- Adicionado teste de regressão para manter a autorização e o tempo estendido sincronizados.
+
+## Versionamento
+
+Versão: 0.8.1 → 0.8.2
+Tipo: PATCH
+Motivo: correção compatível da autorização do comando já disponível na interface.
+
+---
+
+# 0.8.1 — Links curtos oficiais do AliExpress
+
+- As ofertas escolhidas do AliExpress agora recebem um link curto oficial `s.click.aliexpress.com/e/_...` antes da publicação.
+- O encurtamento usa `aliexpress.affiliate.link.generate` com o Tracking ID configurado, preservando a atribuição da comissão.
+- A busca manual e a conversão de links também passam a entregar o formato curto.
+- Se o AliExpress não devolver o link curto, o link afiliado anterior é preservado para não interromper a publicação.
+- As demais plataformas e o ciclo de seleção das ofertas não foram alterados.
+
+## Versionamento
+
+Versão: 0.8.0 → 0.8.1
+Tipo: PATCH
+Motivo: correção compatível do formato dos links afiliados já publicados pelo AliExpress.
+
+---
+
+# 0.8.0 — Busca avulsa de produtos no aplicativo
+
+- Adicionada a aba **Buscar produtos**, com pesquisa simultânea nas plataformas ativas.
+- A tela retorna o melhor resultado disponível de Mercado Livre, Shopee, Amazon e AliExpress, cada um identificado pela logomarca da plataforma.
+- Cada oferta exibe imagem, título, preço anterior, preço atual, desconto, avaliação e vendas quando esses dados estão disponíveis.
+- O botão **Copiar oferta completa** usa o mesmo modelo formatado das publicações atuais e inclui o link de afiliado.
+- A pesquisa é independente do ciclo automático: não pausa o bot, não publica mensagens, não altera a fila e não grava resultados no histórico.
+- Falhas são isoladas por marketplace; uma plataforma indisponível não impede as demais de retornarem resultados.
+- O acesso ao perfil do Mercado Livre agora é serializado para impedir conflito entre a pesquisa manual e a geração automática de links.
+
+## Versionamento
+
+Versão: 0.7.1 → 0.8.0
+Tipo: MINOR
+Motivo: adição compatível de uma nova tela e de um fluxo independente de busca manual.
+
+---
+
 # 0.7.1 — Compatibilidade com a API básica do AliExpress
 
 - Corrigido o erro `isv.appkey-not-exists` ao usar App Keys atuais do AliExpress Open Platform.

@@ -59,6 +59,7 @@ class DesktopService:
         )
         self._action_lock = asyncio.Lock()
         self._ml_lock = asyncio.Lock()
+        self._search_lock = asyncio.Lock()
         self._shutdown = False
         self._handlers = {
             "get_status": self._get_status,
@@ -71,6 +72,7 @@ class DesktopService:
             "install_browser": self._install_browser,
             "start_ml_login": self._start_ml_login,
             "get_history": self._get_history,
+            "search_products": self._search_products,
             "import_legacy_data": self._import_legacy_data,
             "whatsapp_connect": self._whatsapp_connect,
             "whatsapp_groups": self._whatsapp_groups,
@@ -279,6 +281,27 @@ class DesktopService:
 
     async def _get_history(self, payload):
         return {"items": await asyncio.to_thread(db.listar, payload.get("limit", 100), payload.get("offset", 0))}
+
+    async def _search_products(self, payload):
+        query = str(payload.get("query") or "").strip()
+        if len(query) < 2:
+            raise PublicError("Digite pelo menos dois caracteres para pesquisar.")
+        if self._search_lock.locked():
+            raise PublicError("Já existe uma pesquisa de produtos em andamento.")
+
+        from .product_search import buscar
+
+        reload_config()
+        async with self._search_lock:
+            self.emitter.log("INFO", "busca", f"Pesquisa manual iniciada: {query[:80]}")
+            result = await asyncio.to_thread(buscar, query)
+        for error in result["errors"]:
+            error["message"] = sanitize(error["message"])
+        self.emitter.log(
+            "INFO", "busca",
+            f"Pesquisa manual concluída: {len(result['results'])} resultado(s) pronto(s) para copiar.",
+        )
+        return result
 
     async def _import_legacy_data(self, payload):
         from .migration import import_legacy

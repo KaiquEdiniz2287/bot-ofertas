@@ -16,6 +16,7 @@ ALLOWED_COMMANDS = frozenset({
     "get_history", "import_legacy_data", "shutdown",
     "whatsapp_connect", "whatsapp_groups", "whatsapp_logout", "whatsapp_test",
     "get_pending_deliveries", "retry_delivery",
+    "search_products",
 })
 
 

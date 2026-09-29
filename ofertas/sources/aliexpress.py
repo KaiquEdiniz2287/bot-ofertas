@@ -173,10 +173,24 @@ def buscar_ofertas(limite: int = 40) -> list[Oferta]:
     return list(offers.values())[:limite]
 
 
+def buscar_produtos(termo: str, limite: int = 10) -> list[Oferta]:
+    """Busca pontual para a vitrine manual, independente do ciclo automático."""
+    termo = termo.strip()
+    if not termo:
+        return []
+    if not config.aliexpress_tracking_id:
+        raise RuntimeError("Configure ALIEXPRESS_TRACKING_ID para gerar links de afiliado.")
+    result = _chamar(
+        "aliexpress.affiliate.product.query",
+        **_parametros(min(50, max(1, limite)), termo),
+    )
+    return [offer for item in _produtos(result) if (offer := _produto_para_oferta(item))]
+
+
 def gerar_links_afiliado(offers: list[Oferta]) -> None:
     if not config.aliexpress_tracking_id:
         raise RuntimeError("Configure ALIEXPRESS_TRACKING_ID para gerar links de afiliado.")
-    pending = [offer for offer in offers if not offer.url_afiliado and offer.url_produto]
+    pending = [offer for offer in offers if offer.url_produto]
     if not pending:
         return
     result = _chamar(
@@ -190,7 +204,8 @@ def gerar_links_afiliado(offers: list[Oferta]) -> None:
     for index, offer in enumerate(pending):
         clean = offer.url_produto.split("?")[0]
         link = by_source.get(clean) or (str(links[index].get("promotion_link") or "") if index < len(links) else "")
-        offer.url_afiliado = link.replace("http://", "https://", 1)
+        if link:
+            offer.url_afiliado = link.replace("http://", "https://", 1)
 
 
 def converter(url: str) -> Oferta:
@@ -211,8 +226,7 @@ def converter(url: str) -> Oferta:
         if products:
             offer = _produto_para_oferta(products[0])
             if offer:
-                if not offer.url_afiliado:
-                    gerar_links_afiliado([offer])
+                gerar_links_afiliado([offer])
                 return offer
 
     offer = Oferta(

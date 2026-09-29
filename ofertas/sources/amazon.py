@@ -269,8 +269,9 @@ def _tarefas_do_ciclo() -> list[dict]:
     return (tarefas + tarefas)[inicio:inicio + por_ciclo]
 
 
-def _buscar_por_scraping(tarefas: list[dict]) -> list[Oferta]:
-    paginas = int(config.fonte_amazon.get("paginas", 1))
+def _buscar_por_scraping(tarefas: list[dict], paginas: int | None = None,
+                         pausa_segundos: int = 3) -> list[Oferta]:
+    paginas = paginas or int(config.fonte_amazon.get("paginas", 1))
     s = _sessao()
     ofertas: dict[str, Oferta] = {}
     for tarefa in tarefas:
@@ -295,7 +296,8 @@ def _buscar_por_scraping(tarefas: list[dict]) -> list[Oferta]:
             for o in achadas:
                 ofertas[o.id_produto] = o
             log.info("Amazon %s: %d itens", tarefa["rotulo"], len(achadas))
-            time.sleep(3)  # educação com o servidor
+            if pausa_segundos:
+                time.sleep(pausa_segundos)  # educação com o servidor
     return list(ofertas.values())
 
 
@@ -322,6 +324,35 @@ def buscar_ofertas() -> list[Oferta]:
     log.info("Amazon (scraping): %d ofertas em %d página(s): %s",
              len(ofertas), len(tarefas), ", ".join(t["rotulo"] for t in tarefas))
     return ofertas
+
+
+def buscar_produtos(termo: str, limite: int = 10) -> list[Oferta]:
+    """Busca pontual para a vitrine manual, sem mexer no rodízio do bot."""
+    global _api_bloqueada_ate
+    termo = termo.strip()
+    if not termo:
+        return []
+    if not config.amazon_tag:
+        raise RuntimeError("Configure AMAZON_TAG para gerar links de afiliado.")
+    if tem_api() and time.time() >= _api_bloqueada_ate:
+        try:
+            items = _chamar("searchItems", {
+                "keywords": termo,
+                "itemCount": min(10, max(1, limite)),
+                "itemPage": 1,
+                "condition": "New",
+                "sortBy": "Featured",
+            })
+            return [offer for item in items if (offer := _item_para_oferta(item))]
+        except Exception as exc:
+            if "AssociateNotEligible" in str(exc):
+                _api_bloqueada_ate = time.time() + 6 * 3600
+            log.warning("Amazon: busca manual pela API indisponível (%s); usando o site", exc)
+    return _buscar_por_scraping(
+        [{"rotulo": f"busca manual '{termo}'", "params": {"k": termo}}],
+        paginas=1,
+        pausa_segundos=0,
+    )[:limite]
 
 
 # ── Conversor de link ────────────────────────────────────────────────

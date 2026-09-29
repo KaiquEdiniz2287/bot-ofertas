@@ -12,8 +12,10 @@ import os
 import re
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
+from urllib.parse import parse_qs, quote_plus, urlsplit
 
 from bs4 import BeautifulSoup
 
@@ -27,6 +29,7 @@ URL_OFERTAS = "https://www.mercadolivre.com.br/ofertas"
 URL_LINKBUILDER = "https://www.mercadolivre.com.br/afiliados/linkbuilder"
 API_CREATELINK = "https://www.mercadolivre.com.br/affiliate-program/api/v2/affiliates/createLink"
 PERFIL_DIR = DATA_DIR / "ml_profile"
+_PERFIL_LOCK = threading.Lock()
 
 _RE_ID = re.compile(r"(MLB-?\d{6,})")
 
@@ -80,14 +83,24 @@ def _preco_de(card, seletor_base: str) -> float | None:
     return parse_preco_br(texto)
 
 
+def _url_produto(href: str) -> str:
+    """Extrai o produto real quando o resultado usa o redirecionador de anúncios do ML."""
+    parsed = urlsplit(href)
+    if parsed.hostname == "click1.mercadolivre.com.br":
+        href = (parse_qs(parsed.query).get("url") or [""])[0]
+    return href.split("#", 1)[0].split("?", 1)[0]
+
+
 def _parse_card(card) -> Oferta | None:
     a = card.select_one("a.poly-component__title")
     if not (a and a.get("href")):
         return None
     titulo = a.get_text(strip=True)
-    url = a["href"].split("#")[0].split("?")[0]
+    url = _url_produto(a["href"])
+    if not url:
+        return None
 
-    m = _RE_ID.search(a["href"])
+    m = _RE_ID.search(url)
     id_produto = m.group(1).replace("-", "") if m else url.rstrip("/").rsplit("/", 1)[-1][:40]
 
     preco = _preco_de(card, ".poly-price__current")
@@ -135,6 +148,35 @@ def _parse_pagina(html: str) -> list[Oferta]:
     if cards and not ofertas:
         log.warning("Página de ofertas do ML mudou de layout? %d cards, 0 parseados", len(cards))
     return ofertas
+
+
+def buscar_produtos(termo: str, limite: int = 10) -> list[Oferta]:
+    """Busca pontual usando o perfil local, sem alterar a seleção do ciclo."""
+    from playwright.sync_api import sync_playwright
+
+    termo = termo.strip()
+    if not termo:
+        return []
+    if not tem_sessao():
+        raise RuntimeError("Faça o login do Mercado Livre em Operação antes de pesquisar.")
+    with _PERFIL_LOCK, sync_playwright() as pw:
+        ctx = _abrir_contexto(pw, headless=True)
+        page = ctx.pages[0] if ctx.pages else ctx.new_page()
+        try:
+            page.goto(
+                f"https://lista.mercadolivre.com.br/{quote_plus(termo)}",
+                wait_until="domcontentloaded",
+                timeout=45_000,
+            )
+            if "account-verification" in page.url:
+                raise RuntimeError("O Mercado Livre pediu uma verificação da conta; refaça o login em Operação.")
+            try:
+                page.wait_for_selector("div.poly-card", timeout=15_000)
+            except Exception:
+                pass  # busca válida sem resultados ou conteúdo carregado de outra forma
+            return _parse_pagina(page.content())[:limite]
+        finally:
+            ctx.close()
 
 
 # ── Link de afiliado via Linkbuilder (Playwright + sessão logada) ────
@@ -271,7 +313,7 @@ def gerar_links_afiliado(ofertas: list[Oferta]) -> None:
     if not pendentes:
         return
 
-    with sync_playwright() as pw:
+    with _PERFIL_LOCK, sync_playwright() as pw:
         ctx = _abrir_contexto(pw, headless=True)
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
         try:

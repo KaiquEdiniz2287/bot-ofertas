@@ -1,6 +1,7 @@
 import unittest
 from unittest.mock import Mock, patch
 
+from ofertas.models import Oferta
 from ofertas.sources import aliexpress
 
 
@@ -41,6 +42,27 @@ class AliExpressTests(unittest.TestCase):
         self.assertEqual(offer.desconto, 31)
         self.assertTrue(offer.url_afiliado.startswith("https://s.click.aliexpress.com/"))
         self.assertIn("321 vendidos", offer.extra)
+
+    def test_substitui_link_longo_pelo_link_curto_oficial(self):
+        offer = Oferta(
+            plataforma="aliexpress",
+            id_produto="100500123",
+            titulo="Produto",
+            url_afiliado="https://s.click.aliexpress.com/s/" + "x" * 1000,
+            url_produto="https://pt.aliexpress.com/item/100500123.html?src=busca",
+        )
+        response = {"promotion_links": {"promotion_link": [{
+            "source_value": "https://pt.aliexpress.com/item/100500123.html",
+            "promotion_link": "http://s.click.aliexpress.com/e/_curto",
+        }]}}
+        with patch.object(aliexpress.config, "aliexpress_tracking_id", "tracking"), patch.object(
+            aliexpress, "_chamar", return_value=response
+        ) as call:
+            aliexpress.gerar_links_afiliado([offer])
+
+        self.assertEqual(offer.url_afiliado, "https://s.click.aliexpress.com/e/_curto")
+        self.assertEqual(call.call_args.kwargs["promotion_link_type"], 0)
+        self.assertEqual(call.call_args.kwargs["tracking_id"], "tracking")
 
     @patch("ofertas.sources.aliexpress.requests.post")
     def test_erro_de_permissao_fica_claro(self, post):

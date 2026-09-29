@@ -314,7 +314,7 @@ dependencies = [
 
 [[package]]
 name = "bot-ofertas-desktop"
-version = "0.7.1"
+version = "0.8.4"
 dependencies = [
  "serde",
  "serde_json",

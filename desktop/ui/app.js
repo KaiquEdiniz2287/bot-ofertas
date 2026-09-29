@@ -4,6 +4,7 @@ const {invoke}=window.__TAURI__.core,{listen}=window.__TAURI__.event;
 const $=selector=>document.querySelector(selector);
 const pageInfo={
   overview:["Visão geral","Acompanhe a operação e a saúde do bot."],
+  search:["Buscar produtos","Compare um resultado afiliado de cada plataforma sem interromper o bot."],
   operation:["Operação","Execute e teste cada fonte com segurança."],
   settings:["Configurações","Credenciais e preferências ficam somente neste computador."],
   whatsapp:["WhatsApp","Conexão, grupo e envios que aguardam sua decisão."],
@@ -107,6 +108,12 @@ function render(){
     const statusLabel=state.botRunning?"Em execução":state.ready?"Pronto":"Requer configuração";
     content.innerHTML=`<div class="page-stack"><section class="hero-card dashboard-hero"><div><span class="eyebrow">CENTRAL DE AUTOMAÇÃO</span><h2>${state.botRunning?"Seu bot está trabalhando.":"Tudo sob seu controle."}</h2><p>${state.ready?"Execute o ciclo, acompanhe os canais e confira os próximos tempos sem sair desta tela.":"Complete Telegram e afiliados para começar a publicar ofertas."}</p><div class="channel-row"><span>${brand("telegram","Telegram","small")} Telegram <b class="${state.ready?"ok":""}">${state.ready?"configurado":"pendente"}</b></span><span>${brand("whatsapp","WhatsApp","small")} WhatsApp <b class="${state.whatsappStatus==="CONNECTED"?"ok":""}">${whatsappLabel(state.whatsappStatus)}</b></span></div></div><div class="hero-controls"><span class="hero-orb ${state.botRunning?"active":""}" aria-hidden="true">↗</span><button class="button primary cycle-button" data-action="cycle" ${state.actionRunning||!state.ready?"disabled":""}>${state.actionRunning?"Operação em andamento":"Executar ciclo agora"}</button><small>Pode publicar ofertas nos canais ativos.</small></div></section>${timerStrip(true)}<div class="metric-grid"><article class="metric-card"><span class="metric-icon">●</span><div><small>Estado atual</small><strong>${statusLabel}</strong></div></article><article class="metric-card"><span class="metric-icon brand-box">${brand("whatsapp","WhatsApp")}</span><div><small>WhatsApp</small><strong>${whatsappLabel(state.whatsappStatus)}</strong></div></article><article class="metric-card"><span class="metric-icon">◷</span><div><small>Próximo ciclo</small><strong class="countdown" data-countdown="next">${formatCountdown(state.nextCycleAt)}</strong></div></article><article class="metric-card"><span class="metric-icon">!</span><div><small>Pendências manuais</small><strong>${state.pendingDeliveries||0}</strong></div></article><article class="metric-card wide"><span class="metric-icon">⌂</span><div><small>Diretório de dados</small><strong class="path">${escapeHtml(state.dataDir||"—")}</strong></div></article></div><section class="panel next-step"><div><span class="section-kicker">${state.pauseUntil?"PAUSA EM ANDAMENTO":"ACESSO RÁPIDO"}</span><h3>${state.pauseUntil?`Retomada em <span data-countdown="pause">${formatCountdown(state.pauseUntil)}</span>`:state.ready?"Valide as integrações quando precisar":"Finalize as credenciais essenciais"}</h3><p>${state.pauseUntil?`Horário previsto: ${formatDate(state.pauseUntil)}.`:state.ready?"Os testes e indicadores permanentes ficam reunidos na área Operação.":"Abra Configurações e preencha o token, o proprietário e o canal do Telegram."}</p></div><button class="button secondary" data-page-link="${state.pendingDeliveries?"whatsapp":state.ready?"operation":"settings"}">${state.pendingDeliveries?"Ver pendências":state.ready?"Ver operações":"Abrir configurações"} →</button></section></div>`;
   }
+  if(state.page==="search"){
+    const search=state.productSearch;
+    const cards=search.results.map((result,index)=>{const offer=result.offer||{};return `<article class="search-result-card"><div class="result-media">${offer.imagem?`<img src="${escapeHtml(offer.imagem)}" alt="" loading="lazy" onerror="this.hidden=true;this.nextElementSibling.hidden=false"><span hidden>${platformBrand(result.platform)}</span>`:`<span>${platformBrand(result.platform)}</span>`}</div><div class="result-body"><div class="result-platform">${platformBrand(result.platform)}<strong>${escapeHtml(result.label)}</strong><span>Melhor resultado</span></div><h3>${escapeHtml(offer.titulo)}</h3><div class="result-price"><strong>${formatPrice(offer.preco)}</strong>${offer.preco_original?`<s>${formatPrice(offer.preco_original)}</s>`:""}${offer.desconto_pct?`<b>-${Number(offer.desconto_pct)}%</b>`:""}</div>${offer.extra?`<p class="result-extra">${escapeHtml(offer.extra)}</p>`:""}<details><summary>Ver texto pronto</summary><pre>${escapeHtml(result.text)}</pre></details><div class="result-actions"><button class="button primary" data-copy-result="${index}">Copiar oferta completa</button><a class="button ghost" href="${escapeHtml(offer.url_afiliado)}" target="_blank" rel="noreferrer">Abrir produto ↗</a></div></div></article>`}).join("");
+    const errors=search.errors.length?`<section class="search-notices"><strong>Plataformas sem resultado nesta busca</strong>${search.errors.map(error=>`<div>${platformBrand(error.platform)}<span><b>${escapeHtml(error.label)}</b>${escapeHtml(error.message)}</span></div>`).join("")}</section>`:"";
+    content.innerHTML=`<div class="page-stack search-page"><section class="search-hero"><div><span class="section-kicker">PESQUISA AVULSA</span><h2>Encontre uma oferta pronta para compartilhar</h2><p>A pesquisa acontece separada do ciclo automático: não publica, não entra no histórico e não pausa o bot.</p></div><form id="product-search-form" class="search-box"><label for="product-query">Qual produto você procura?</label><div><input id="product-query" name="query" value="${escapeHtml(search.query)}" placeholder="Ex.: fone bluetooth, air fryer, notebook…" minlength="2" autocomplete="off" required><button class="button primary" type="submit" ${search.loading?"disabled":""}>${search.loading?"Pesquisando…":"Pesquisar"}</button></div><small>Consultaremos simultaneamente as plataformas ativas.</small></form></section>${search.loading?`<section class="search-loading"><i></i><div><strong>Procurando as melhores opções…</strong><span>Você pode deixar o bot funcionando normalmente.</span></div></section>`:""}${!search.loading&&search.searched?`<div class="search-summary"><div><span class="section-kicker">RESULTADOS</span><h2>${search.results.length?`${search.results.length} oferta(s) pronta(s) para copiar`:"Nenhuma oferta pronta"}</h2></div><span>Pesquisa: <strong>${escapeHtml(search.query)}</strong></span></div><div class="search-results">${cards}</div>${errors}`:`<section class="search-empty"><span>⌕</span><h3>Uma busca, as melhores opções</h3><p>Digite o produto para receber até um resultado de Mercado Livre, Shopee, Amazon e AliExpress.</p></section>`}</div>`;
+  }
   if(state.page==="operation"){
     const disabled=state.actionRunning?"disabled":"";
     const current=state.currentAction,status=current?.status||"idle";
@@ -140,6 +147,8 @@ function bind(){
   document.querySelectorAll("[data-page-link]").forEach(button=>button.onclick=()=>navigate(button.dataset.pageLink));
   const form=$("#settings-form");if(form)form.onsubmit=saveSettings;
   document.querySelectorAll("[data-retry-uid]").forEach(button=>button.onclick=()=>retryDelivery(button));
+  const searchForm=$("#product-search-form");if(searchForm)searchForm.onsubmit=searchProducts;
+  document.querySelectorAll("[data-copy-result]").forEach(button=>button.onclick=()=>copySearchResult(button));
 }
 
 function navigate(page){state={...state,page};window.scrollTo(0,0);render()}
@@ -186,6 +195,26 @@ async function retryDelivery(button){
   button.disabled=true;button.textContent="Enviando…";
   try{await request("retry_delivery",{uid:button.dataset.retryUid,destination:button.dataset.retryDestination});toast("Oferta enviada ao WhatsApp.");state={...state,pending:(await request("get_pending_deliveries")).items||[]};await refreshStatus();render()}
   catch{button.disabled=false;button.textContent="Enviar agora"}
+}
+
+async function searchProducts(event){
+  event.preventDefault();
+  const query=String(new FormData(event.currentTarget).get("query")||"").trim();
+  if(query.length<2){toast("Digite pelo menos dois caracteres.",true);return}
+  state={...state,productSearch:{...state.productSearch,query,loading:true,results:[],errors:[],searched:true}};render();
+  try{
+    const result=await request("search_products",{query});
+    state={...state,productSearch:{query:result.query||query,loading:false,results:result.results||[],errors:result.errors||[],searched:true}};
+    toast(result.results?.length?`${result.results.length} oferta(s) pronta(s) para copiar.`:"A pesquisa terminou sem ofertas prontas.",!result.results?.length);
+  }catch{state={...state,productSearch:{...state.productSearch,loading:false}}}
+  render();
+}
+
+async function copySearchResult(button){
+  const result=state.productSearch.results[Number(button.dataset.copyResult)];
+  if(!result)return;
+  try{await navigator.clipboard.writeText(result.text);button.textContent="✓ Copiado";button.classList.add("copied");toast(`Oferta da ${result.label} copiada.`);setTimeout(()=>{if(button.isConnected){button.textContent="Copiar oferta completa";button.classList.remove("copied")}},1800)}
+  catch{toast("Não foi possível copiar o texto.",true)}
 }
 
 async function saveSettings(event){
