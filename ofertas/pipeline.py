@@ -161,6 +161,7 @@ async def executar_ciclo(bot: Bot, whatsapp=None, state_callback=None) -> int:
     preferences = read_settings(False).get("preferences") or {}
     whatsapp_enabled = bool(preferences.get("whatsappEnabled"))
     whatsapp_group = str(preferences.get("whatsappGroupJid") or "")
+    whatsapp_send_image = preferences.get("whatsappSendImage", True) is not False
     postadas = 0
     enviadas_whatsapp = 0
     for index, o in enumerate(escolhidas):
@@ -185,7 +186,8 @@ async def executar_ciclo(bot: Bot, whatsapp=None, state_callback=None) -> int:
             if whatsapp and whatsapp.connected:
                 try:
                     message_id = await whatsapp.send_offer(
-                        whatsapp_group, montar_whatsapp(o), o.imagem
+                        whatsapp_group, montar_whatsapp(o), o.imagem,
+                        send_image=whatsapp_send_image, title=o.titulo,
                     )
                 except Exception as e:
                     db.marcar_entrega_whatsapp(o.uid, whatsapp_group, False, str(e))

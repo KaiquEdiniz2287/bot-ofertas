@@ -51,7 +51,7 @@ class _LineRedirector:
 class DesktopService:
     def __init__(self, emitter: JsonEmitter, runtime: BotRuntime | None = None):
         self.emitter = emitter
-        self._runtime_state = {"pauseUntil": None, "nextCycleAt": None}
+        self._runtime_state = {"cycleRunning": False, "pauseUntil": None, "nextCycleAt": None}
         self._last_whatsapp_status = "DISCONNECTED"
         self.whatsapp = WhatsAppBridge(self._on_whatsapp_event)
         self.runtime = runtime or BotRuntime(
@@ -134,7 +134,7 @@ class DesktopService:
         return {
             "connected": True,
             "botRunning": self.runtime.running,
-            "actionRunning": self._action_lock.locked(),
+            "actionRunning": self._action_lock.locked() or self._runtime_state["cycleRunning"],
             "dataDir": str(DATA_DIR),
             "ready": bool(config.bot_token and config.chat_id and config.owner_id),
             "whatsappStatus": self.whatsapp.status,
@@ -212,7 +212,7 @@ class DesktopService:
         if not payload.get("confirmed"):
             raise PublicError("Confirme a execução: este ciclo pode publicar ofertas.")
         reload_config()
-        if self._action_lock.locked():
+        if self._action_lock.locked() or self._runtime_state["cycleRunning"]:
             raise PublicError("Já existe uma operação em andamento.")
         succeeded = False
         try:
@@ -355,9 +355,12 @@ class DesktopService:
             raise PublicError("Essa oferta expirou e não pode mais ser reenviada.")
         if not self.whatsapp.connected:
             raise PublicError("Conecte o WhatsApp antes de tentar o envio novamente.")
+        preferences = (await asyncio.to_thread(read_settings, False)).get("preferences") or {}
         try:
             message_id = await self.whatsapp.send_offer(
-                destination, montar_whatsapp(offer), offer.imagem
+                destination, montar_whatsapp(offer), offer.imagem,
+                send_image=preferences.get("whatsappSendImage", True) is not False,
+                title=offer.titulo,
             )
         except Exception as exc:
             await asyncio.to_thread(db.marcar_entrega_whatsapp, uid, destination, False, str(exc), True)

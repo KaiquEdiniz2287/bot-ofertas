@@ -2,7 +2,7 @@ export function createState() {
   return {
     connected:false, botRunning:false, actionRunning:false, ready:false, logs:[], page:"overview",
     settings:null, history:[], whatsappStatus:"DISCONNECTED", whatsappAccount:"", whatsappQr:"",
-    whatsappGroups:[], pending:[], pauseUntil:null, nextCycleAt:null, whatsappRetryAt:null,
+    whatsappGroups:[], pending:[], cycleRunning:false, pauseUntil:null, nextCycleAt:null, whatsappRetryAt:null,
     whatsappRetryAttempt:0, whatsappRetryMax:5, browserInstalled:false, mlSessionDetected:false,
     cycleIntervalMinutes:0, postSpacingSeconds:0, currentAction:null, sessionActions:{},
     productSearch:{query:"",loading:false,results:[],errors:[],searched:false},

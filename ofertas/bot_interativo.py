@@ -20,6 +20,7 @@ from .utils import extrair_urls
 log = logging.getLogger("ofertas.bot")
 
 _pendentes: dict[str, Oferta] = {}
+CYCLE_JOB_KWARGS = {"coalesce": True, "max_instances": 1, "misfire_grace_time": None}
 
 
 async def _cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -153,18 +154,29 @@ async def _callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 async def _job_ciclo(ctx: ContextTypes.DEFAULT_TYPE):
+    callback = ctx.application.bot_data.get("state_callback")
+    if callback:
+        callback({"cycleRunning": True, "pauseUntil": None})
+    log.info("Ciclo automático iniciado.")
     try:
         await pipeline.executar_ciclo(
-            ctx.bot, ctx.application.bot_data.get("whatsapp"), ctx.application.bot_data.get("state_callback")
+            ctx.bot, ctx.application.bot_data.get("whatsapp"), callback
         )
     except Exception as e:
         log.exception("Ciclo automático falhou")
         await pipeline.avisar_dono(ctx.bot, f"⚠️ O ciclo automático falhou: {type(e).__name__}: {e}")
     finally:
-        callback = ctx.application.bot_data.get("state_callback")
-        proximo = dt.datetime.now() + dt.timedelta(minutes=config.intervalo_minutos)
+        proximo = getattr(getattr(ctx, "job", None), "next_t", None)
+        if proximo is None:
+            proximo = dt.datetime.now().astimezone() + dt.timedelta(minutes=config.intervalo_minutos)
+        else:
+            proximo = proximo.astimezone()
         if callback:
-            callback({"nextCycleAt": proximo.isoformat(timespec="seconds"), "pauseUntil": None})
+            callback({
+                "cycleRunning": False,
+                "nextCycleAt": proximo.isoformat(timespec="seconds"),
+                "pauseUntil": None,
+            })
         log.info(
             "Próximo ciclo automático em %d minuto(s), previsto para %s.",
             config.intervalo_minutos, proximo.strftime("%H:%M:%S"),
@@ -191,7 +203,12 @@ def criar_aplicacao(whatsapp=None, state_callback=None) -> Application:
     tem_fonte = any(f.get("ativa") for f in
                     (config.fonte_ml, config.fonte_shopee, config.fonte_amazon, config.fonte_aliexpress))
     if tem_fonte and config.intervalo_minutos > 0 and config.chat_id:
-        app.job_queue.run_repeating(_job_ciclo, interval=config.intervalo_minutos * 60, first=30)
+        app.job_queue.run_repeating(
+            _job_ciclo,
+            interval=config.intervalo_minutos * 60,
+            first=30,
+            job_kwargs=CYCLE_JOB_KWARGS,
+        )
         primeiro = dt.datetime.now() + dt.timedelta(seconds=30)
         if state_callback:
             state_callback({"nextCycleAt": primeiro.isoformat(timespec="seconds")})
@@ -259,7 +276,7 @@ class BotRuntime:
             await app.stop()
             await app.shutdown()
             if self._state_callback:
-                self._state_callback({"nextCycleAt": None, "pauseUntil": None})
+                self._state_callback({"cycleRunning": False, "nextCycleAt": None, "pauseUntil": None})
             return True
 
 

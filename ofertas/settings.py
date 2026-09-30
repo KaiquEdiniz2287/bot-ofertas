@@ -185,6 +185,7 @@ def read_settings(mask_secrets: bool = True) -> dict:
         "preferences": {
             "startWithWindows": False,
             "autoStartBot": False,
+            "whatsappSendImage": True,
             **_read_json(APP_PATH, {}),
         },
     }
@@ -213,6 +214,7 @@ def write_settings(payload: dict) -> None:
             "startWithWindows": bool(preferences.get("startWithWindows", False)),
             "autoStartBot": bool(preferences.get("autoStartBot", False)),
             "whatsappEnabled": bool(preferences.get("whatsappEnabled", False)),
+            "whatsappSendImage": bool(preferences.get("whatsappSendImage", True)),
             "whatsappGroupJid": group_jid[:160],
             "whatsappGroupName": str(preferences.get("whatsappGroupName") or "").strip()[:160],
         }

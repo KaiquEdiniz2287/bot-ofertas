@@ -1,6 +1,9 @@
+import datetime as dt
 import unittest
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, patch
 
-from ofertas.bot_interativo import BotRuntime
+from ofertas.bot_interativo import CYCLE_JOB_KWARGS, BotRuntime, _job_ciclo
 
 
 class FakeUpdater:
@@ -36,6 +39,25 @@ class FakeApplication:
 
 
 class BotRuntimeTests(unittest.IsolatedAsyncioTestCase):
+    async def test_ciclo_atrasado_executa_e_renova_o_proximo_horario(self):
+        states = []
+        next_run = dt.datetime.now(dt.timezone.utc) + dt.timedelta(minutes=45)
+        context = SimpleNamespace(
+            bot=object(),
+            job=SimpleNamespace(next_t=next_run),
+            application=SimpleNamespace(bot_data={"whatsapp": None, "state_callback": states.append}),
+        )
+
+        with patch("ofertas.bot_interativo.pipeline.executar_ciclo", new=AsyncMock(return_value=0)):
+            await _job_ciclo(context)
+
+        self.assertEqual(CYCLE_JOB_KWARGS, {
+            "coalesce": True, "max_instances": 1, "misfire_grace_time": None,
+        })
+        self.assertTrue(states[0]["cycleRunning"])
+        self.assertFalse(states[-1]["cycleRunning"])
+        self.assertIsNotNone(states[-1]["nextCycleAt"])
+
     async def test_start_stop_gracioso(self):
         app = FakeApplication()
         runtime = BotRuntime(lambda: app)

@@ -88,11 +88,13 @@ class SettingsTests(unittest.TestCase):
             ):
                 settings.write_settings({"preferences": {
                     "whatsappEnabled": True,
+                    "whatsappSendImage": False,
                     "whatsappGroupJid": "123456@g.us",
                     "whatsappGroupName": "Família & Ofertas",
                 }})
                 saved = settings.read_settings()["preferences"]
             self.assertTrue(saved["whatsappEnabled"])
+            self.assertFalse(saved["whatsappSendImage"])
             self.assertEqual(saved["whatsappGroupName"], "Família & Ofertas")
 
 

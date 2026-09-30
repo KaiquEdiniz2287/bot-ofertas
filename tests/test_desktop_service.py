@@ -1,6 +1,7 @@
 import unittest
 from unittest.mock import AsyncMock, patch
 
+from ofertas.desktop_protocol import PublicError
 from ofertas.desktop_service import DesktopService
 
 
@@ -56,6 +57,13 @@ class DesktopServiceTests(unittest.IsolatedAsyncioTestCase):
 
         states = [event["state"]["actionRunning"] for event in emitter.events if event.get("type") == "state"]
         self.assertEqual(states, [True, False])
+
+    async def test_ciclo_manual_nao_concorre_com_ciclo_automatico(self):
+        service = DesktopService(CaptureEmitter(), RunningRuntime())
+        service._update_runtime_state({"cycleRunning": True})
+
+        with self.assertRaisesRegex(PublicError, "operação em andamento"):
+            await service._run_cycle({"confirmed": True})
 
     async def test_busca_manual_funciona_enquanto_operacao_esta_ocupada(self):
         emitter = CaptureEmitter()

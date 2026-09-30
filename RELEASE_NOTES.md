@@ -1,3 +1,84 @@
+# 0.9.3 — Imagens WebP nas prévias do WhatsApp
+
+- Corrigido o envio de prévias de ofertas do Mercado Livre e do AliExpress, cujas imagens são fornecidas em WebP.
+- O componente do WhatsApp agora converte JPEG, PNG, WebP e AVIF para JPEG antes de montar a prévia.
+- A validação foi realizada com dez imagens reais de cada marketplace: Shopee, AliExpress, Amazon e Mercado Livre.
+- O modo tradicional de envio com imagem e legenda permanece inalterado.
+
+## Versionamento
+
+Versão: 0.9.2 → 0.9.3
+Tipo: PATCH
+Motivo: correção compatível do processamento de imagens nas prévias do WhatsApp.
+
+---
+
+# 0.9.2 — Logs seguros na conexão do WhatsApp
+
+- Corrigido o excesso de avisos exibido ao conectar uma sessão existente do WhatsApp.
+- O bridge deixa de imprimir os detalhes internos das sessões criptográficas renovadas pelo `libsignal`.
+- Adicionada uma segunda barreira no backend para impedir que chaves temporárias e blocos de sessão cheguem ao console ou ao arquivo de log.
+- A renovação normal de uma sessão antiga passa a ser registrada uma única vez como informação, sem indicar uma falha inexistente.
+- Erros operacionais reais continuam visíveis e não são ocultados pelo novo filtro.
+
+## Versionamento
+
+Versão: 0.9.1 → 0.9.2
+Tipo: PATCH
+Motivo: correção compatível de segurança e clareza nos logs da conexão do WhatsApp.
+
+---
+
+# 0.9.1 — Entrega confirmada e prévia resiliente no WhatsApp
+
+- O aplicativo agora só registra uma oferta como enviada depois que o protocolo do WhatsApp confirma o recebimento.
+- Corrigidos os falsos sucessos em que o bridge retornava um identificador, mas a mensagem era recusada logo depois.
+- Com a foto completa desativada, o aplicativo tenta primeiro a prévia fornecida pelo link da oferta.
+- Se a prévia do link falhar, o aplicativo monta um cartão expandido usando o título e a imagem principal do produto em alta qualidade.
+- Uma oferta sem confirmação fica pendente para envio manual, em vez de ser marcada incorretamente como entregue.
+- Avisos repetitivos de sessões criptográficas antigas deixam de poluir o console durante a conexão.
+- O modo tradicional com imagem completa e legenda permanece inalterado.
+
+## Versionamento
+
+Versão: 0.9.0 → 0.9.1
+Tipo: PATCH
+Motivo: correção compatível da confirmação de entrega e da montagem de prévias do WhatsApp.
+
+---
+
+# 0.9.0 — Prévia de produtos no WhatsApp
+
+- Adicionado um controle para escolher entre foto completa e prévia compacta nas ofertas do WhatsApp.
+- Quando a foto completa está desligada, o WhatsApp usa o título, a descrição e a imagem fornecidos pela prévia do próprio link afiliado.
+- A opção permanece ligada por padrão, preservando o comportamento das instalações atuais.
+- Ofertas sem imagem continuam sendo enviadas somente como texto, sem interromper o ciclo.
+
+## Versionamento
+
+Versão: 0.8.5 → 0.9.0
+Tipo: MINOR
+Motivo: adição compatível de uma nova opção de apresentação das ofertas no WhatsApp.
+
+---
+
+# 0.8.5 — Ciclos resilientes e início correto com o Windows
+
+- Ciclos automáticos que começarem alguns segundos atrasados deixam de ser descartados pelo agendador.
+- Após suspensão ou atraso do computador, somente um ciclo pendente é executado, sem acumular várias publicações.
+- O painel agora diferencia claramente **Bot aguardando próximo ciclo** de **Ciclo em execução**.
+- O próximo horário exibido acompanha o agendamento real, evitando que o contador fique preso em **Agora**.
+- Corrigida a entrada de inicialização do Windows para caminhos que contêm espaços.
+- Entradas antigas sem aspas são reparadas automaticamente quando o aplicativo é aberto.
+
+## Versionamento
+
+Versão: 0.8.4 → 0.8.5
+Tipo: PATCH
+Motivo: correções compatíveis no agendamento automático e na inicialização com o Windows.
+
+---
+
 # 0.8.4 — Links válidos na busca do Mercado Livre
 
 - Corrigida a pesquisa manual quando o Mercado Livre retorna um link intermediário de anúncio.

@@ -18,8 +18,23 @@ log = logging.getLogger("ofertas.whatsapp")
 _SIGNAL_DECRYPTION_NOISE = (
     "Failed to decrypt message with any known session",
     "Session error:SessionError: Over 2000 messages into the future!",
+    "Session error:MessageCounterError:",
+    "Session error:Error: Bad MAC",
+    "Closing open session in favor of incoming prekey bundle",
+    "at Object.verifyMAC ",
+    "at process.processTicksAndRejections ",
     "at SessionCipher.",
+    "at async SessionCipher.",
     "at async _asyncQueueExecutor ",
+)
+
+_SIGNAL_SESSION_DUMP_STARTS = (
+    "Closing session: SessionEntry {",
+    "Opening session: SessionEntry {",
+)
+
+_SIGNAL_SECRET_FIELDS = (
+    "privKey:", "rootKey:", "remoteIdentityKey:", "ephemeralKeyPair:",
 )
 
 
@@ -101,17 +116,28 @@ class WhatsAppBridge:
     async def _read_stderr(self) -> None:
         assert self._process and self._process.stderr
         decryption_warning_emitted = False
+        session_dump_depth = 0
         while line := await self._process.stderr.readline():
             text = line.decode("utf-8", errors="replace").strip()
             if not text:
+                continue
+            if session_dump_depth:
+                session_dump_depth += text.count("{") - text.count("}")
+                if session_dump_depth <= 0:
+                    session_dump_depth = 0
+                continue
+            if text.startswith(_SIGNAL_SESSION_DUMP_STARTS):
+                session_dump_depth = max(1, text.count("{") - text.count("}"))
+                continue
+            if any(field in text for field in _SIGNAL_SECRET_FIELDS):
                 continue
             if _is_signal_decryption_noise(text):
                 if not decryption_warning_emitted and (
                     text.startswith("Failed to decrypt") or "Over 2000 messages" in text
                 ):
-                    log.warning(
-                        "WhatsApp descartou uma mensagem recebida com sessão criptográfica antiga. "
-                        "Os envios continuam ativos; se isso persistir, remova a sessão e conecte o QR Code novamente."
+                    log.info(
+                        "WhatsApp renovou uma sessão criptográfica antiga. "
+                        "A conexão e os envios continuam ativos."
                     )
                     decryption_warning_emitted = True
                 continue
@@ -128,7 +154,7 @@ class WhatsAppBridge:
         if self._event_callback:
             self._event_callback(event, payload)
 
-    async def _request(self, action: str, **payload):
+    async def _request(self, action: str, *, timeout: float = 30, **payload):
         await self._ensure_started()
         assert self._process and self._process.stdin
         request_id = uuid.uuid4().hex
@@ -138,7 +164,7 @@ class WhatsAppBridge:
         self._process.stdin.write((json.dumps(message, ensure_ascii=False) + "\n").encode("utf-8"))
         await self._process.stdin.drain()
         try:
-            response = await asyncio.wait_for(future, 30)
+            response = await asyncio.wait_for(future, timeout)
         except asyncio.TimeoutError as exc:
             self._pending.pop(request_id, None)
             raise WhatsAppError("O WhatsApp demorou demais para responder.") from exc
@@ -153,8 +179,18 @@ class WhatsAppBridge:
     async def list_groups(self) -> list[dict]:
         return (await self._request("list_groups")).get("groups", [])
 
-    async def send_offer(self, group_jid: str, text: str, image_url: str | None = None) -> str:
-        result = await self._request("send_offer", groupJid=group_jid, text=text, imageUrl=image_url or "")
+    async def send_offer(
+        self, group_jid: str, text: str, image_url: str | None = None,
+        *, send_image: bool = True, title: str = "",
+    ) -> str:
+        result = await self._request(
+            "send_offer", groupJid=group_jid, text=text, imageUrl=image_url or "",
+            sendImage=send_image, title=title, timeout=70,
+        )
+        if result.get("previewMode") == "fallback":
+            log.info("WhatsApp: a prévia do link falhou; a imagem principal foi usada na prévia.")
+        elif result.get("previewMode") == "link":
+            log.info("WhatsApp: prévia gerada com os dados fornecidos pelo link.")
         return str(result.get("messageId") or "")
 
     async def send_test(self, group_jid: str) -> None:

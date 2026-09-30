@@ -12,13 +12,17 @@
   "dependencies": {
     "@hapi/boom": "9.1.4",
     "@whiskeysockets/baileys": "6.7.24",
+    "link-preview-js": "4.0.4",
     "pino": "9.6.0",
-    "qrcode": "1.5.4"
+    "qrcode": "1.5.4",
+    "sharp": "0.35.5"
   },
   "devDependencies": {
     "@yao-pkg/pkg": "6.22.0"
   },
   "pkg": {
-    "scripts": ["index.cjs"]
+    "scripts": [
+      "index.cjs"
+    ]
   }
 }

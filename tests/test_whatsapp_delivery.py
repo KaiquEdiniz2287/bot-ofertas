@@ -59,6 +59,34 @@ class WhatsAppDeliveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(posted, 1)
         telegram.assert_awaited_once()
 
+    async def test_modo_sem_foto_solicita_previa_do_link(self):
+        item = offer()
+        item.imagem = "https://img.test/produto.jpg"
+        whatsapp = AsyncMock()
+        whatsapp.connected = True
+        whatsapp.send_offer.return_value = "msg-preview"
+        with tempfile.TemporaryDirectory() as tmp, patch.object(db, "_DB", Path(tmp) / "test.db"), patch(
+            "ofertas.pipeline.dentro_do_horario", return_value=True
+        ), patch("ofertas.pipeline.coletar", return_value=[item]), patch(
+            "ofertas.pipeline.postar_oferta", new=AsyncMock()
+        ), patch(
+            "ofertas.pipeline.read_settings",
+            return_value={"preferences": {
+                "whatsappEnabled": True, "whatsappGroupJid": "grupo@g.us",
+                "whatsappSendImage": False,
+            }},
+        ), patch.object(pipeline.config, "max_posts_por_ciclo", 1), patch.object(
+            pipeline.config, "desconto_minimo", 0
+        ), patch.object(pipeline.config, "preco_minimo", 0), patch.object(
+            pipeline.config, "preco_maximo", 0
+        ), patch.object(pipeline.config, "palavras_bloqueadas", []):
+            await pipeline.executar_ciclo(object(), whatsapp)
+
+        whatsapp.send_offer.assert_awaited_once_with(
+            "grupo@g.us", montar_whatsapp(item), item.imagem,
+            send_image=False, title=item.titulo,
+        )
+
     async def test_pendencia_nao_e_reenviada_automaticamente(self):
         whatsapp = AsyncMock()
         whatsapp.connected = True

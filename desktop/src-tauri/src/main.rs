@@ -9,6 +9,27 @@ use tauri_plugin_autostart::ManagerExt;
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_updater::UpdaterExt;
 
+#[cfg(windows)]
+fn windows_autostart_command(executable: &std::path::Path) -> String {
+    format!("\"{}\" --minimized", executable.display())
+}
+
+#[cfg(windows)]
+fn repair_windows_autostart(app: &tauri::AppHandle) -> Result<(), String> {
+    use winreg::{enums::HKEY_CURRENT_USER, RegKey};
+
+    let executable = std::env::current_exe().map_err(|error| error.to_string())?;
+    let command = windows_autostart_command(&executable);
+    let key = RegKey::predef(HKEY_CURRENT_USER)
+        .open_subkey_with_flags(
+            "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run",
+            winreg::enums::KEY_SET_VALUE,
+        )
+        .map_err(|error| error.to_string())?;
+    key.set_value(&app.package_info().name, &command)
+        .map_err(|error| error.to_string())
+}
+
 #[tauri::command]
 async fn backend_request(
     state: tauri::State<'_, Backend>,
@@ -35,11 +56,13 @@ fn get_autostart(app: tauri::AppHandle) -> Result<bool, String> {
 #[tauri::command]
 fn set_autostart(app: tauri::AppHandle, enabled: bool) -> Result<(), String> {
     if enabled {
-        app.autolaunch().enable()
+        app.autolaunch().enable().map_err(|e| e.to_string())?;
+        #[cfg(windows)]
+        repair_windows_autostart(&app)?;
+        Ok(())
     } else {
-        app.autolaunch().disable()
+        app.autolaunch().disable().map_err(|e| e.to_string())
     }
-    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -180,6 +203,10 @@ fn main() {
             restart_app
         ])
         .setup(|app| {
+            #[cfg(windows)]
+            if app.autolaunch().is_enabled().unwrap_or(false) {
+                let _ = repair_windows_autostart(app.handle());
+            }
             app.state::<Backend>().start(app.handle())?;
             tray::build(app)?;
             let handle = app.handle().clone();
@@ -215,4 +242,20 @@ fn main() {
         })
         .run(tauri::generate_context!())
         .expect("erro ao executar o Bot de Ofertas");
+}
+
+#[cfg(all(test, windows))]
+mod tests {
+    use super::windows_autostart_command;
+
+    #[test]
+    fn caminho_do_autostart_fica_entre_aspas() {
+        let command = windows_autostart_command(std::path::Path::new(
+            r"C:\Users\Kaio Diniz\AppData\Local\Bot de Ofertas\bot-ofertas-desktop.exe",
+        ));
+        assert_eq!(
+            command,
+            r#""C:\Users\Kaio Diniz\AppData\Local\Bot de Ofertas\bot-ofertas-desktop.exe" --minimized"#,
+        );
+    }
 }

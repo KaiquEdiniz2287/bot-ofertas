@@ -314,7 +314,7 @@ dependencies = [
 
 [[package]]
 name = "bot-ofertas-desktop"
-version = "0.8.4"
+version = "0.9.3"
 dependencies = [
  "serde",
  "serde_json",
@@ -326,6 +326,7 @@ dependencies = [
  "tauri-plugin-updater",
  "tokio",
  "uuid",
+ "winreg 0.55.0",
 ]
 
 [[package]]

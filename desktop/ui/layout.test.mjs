@@ -54,6 +54,12 @@ test("mostra integração do WhatsApp, pendências manuais e pausas", () => {
   assert.match(css, /\.qr-panel/);
 });
 
+test("permite trocar foto completa por prévia do produto no WhatsApp", () => {
+  assert.match(app, /name="whatsappSendImage"/);
+  assert.match(app, /Enviar foto completa/);
+  assert.match(app, /prévia do link; se ela falhar, o app usa a imagem principal/);
+});
+
 test("oferece busca avulsa sem misturar com a operação do bot", () => {
   assert.match(html, /data-page="search"/);
   assert.match(app, /request\("search_products",\{query\}\)/);
@@ -74,6 +80,11 @@ test("centraliza ciclo, temporizadores e estados das operações", () => {
   assert.match(app, /browserInstalled/);
   assert.match(app, /mlSessionDetected/);
   assert.match(app, /Concluído nesta sessão/);
+});
+
+test("distingue bot aguardando de ciclo realmente em execução", () => {
+  assert.match(app, /state\.cycleRunning\?"Ciclo em execução":state\.botRunning\?"Bot aguardando próximo ciclo"/);
+  assert.match(app, /state\.cycleRunning\?"Em andamento":formatCountdown\(state\.nextCycleAt\)/);
 });
 
 test("usa logomarcas locais das plataformas", () => {

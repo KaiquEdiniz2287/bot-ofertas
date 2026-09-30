@@ -1,6 +1,6 @@
 [package]
 name = "bot-ofertas-desktop"
-version = "0.8.4"
+version = "0.9.3"
 description = "Aplicativo desktop do Bot de Ofertas"
 edition = "2021"
 
@@ -17,6 +17,9 @@ serde_json = "1"
 tokio = { version = "1", features = ["sync", "time"] }
 uuid = { version = "1", features = ["v4"] }
 tauri-plugin-updater = "2"
+
+[target.'cfg(windows)'.dependencies]
+winreg = "0.55"
 
 [profile.release]
 strip = true
