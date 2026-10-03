@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const test = require('node:test');
 const QRCode = require('qrcode');
 const sharp = require('sharp');
-const { previewContent, thumbnailBuffer } = require('../preview.cjs');
+const { isAmazonOffer, previewContent, thumbnailBuffer } = require('../preview.cjs');
 
 test('monta uma prévia comum do WhatsApp sem anúncio externo', () => {
   const thumbnail = Buffer.from('imagem');
@@ -43,4 +43,23 @@ test('converte WebP e AVIF dos marketplaces em JPEG compatível', async () => {
     assert.equal(thumbnail[1], 0xd8);
     assert.ok(thumbnail.length > 100);
   }
+});
+
+test('rejeita pixel de rastreamento usado como imagem de prévia', async () => {
+  const trackingPixel = await sharp({
+    create: { width: 1, height: 1, channels: 3, background: '#ffffff' },
+  }).jpeg().toBuffer();
+
+  await assert.rejects(() => thumbnailBuffer(trackingPixel), /pequena demais/);
+});
+
+test('usa a imagem principal nas ofertas da Amazon', () => {
+  assert.equal(isAmazonOffer({
+    text: 'Oferta https://www.amazon.com.br/dp/B0TESTE123?tag=afiliado-20',
+    imageUrl: 'https://m.media-amazon.com/images/I/produto.jpg',
+  }), true);
+  assert.equal(isAmazonOffer({
+    text: 'Oferta https://shopee.com.br/produto',
+    imageUrl: 'https://cf.shopee.com.br/file/produto',
+  }), false);
 });

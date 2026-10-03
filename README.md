@@ -145,7 +145,7 @@ Cole um link de produto no privado do bot para testar, ou espere o primeiro cicl
 ---
 
 ## Ajustes — `config.yaml`
-Intervalo entre ciclos, quantos posts por vez, desconto mínimo, horário ativo e o **escopo do canal**. Por padrão o bot pega **ofertas de todas as categorias**. Para focar num nicho (tecnologia, moda, casa, pet…), preencha as listas de `categorias`/`departamentos`/`buscas` no `config.yaml` — há exemplos comentados dentro do arquivo. Edite e **reinicie o bot** (ele só lê a configuração ao iniciar).
+Intervalo entre ciclos, quantos posts por vez, desconto mínimo, horário ativo e o **escopo do canal**. Por padrão o bot pega **ofertas de todas as categorias**. No aplicativo desktop, abra **Configurações → Categorias dos produtos** para escolher os nichos do próximo ciclo. Se nada estiver marcado, o bot continua pesquisando todas as categorias.
 
 ## Deixar rodando sozinho
 - O bot posta enquanto a janela estiver aberta e o PC ligado. O `run.bat` reinicia sozinho se cair.

@@ -156,7 +156,10 @@ class DesktopService:
         return self._state()
 
     async def _get_settings(self, _):
-        return await asyncio.to_thread(read_settings, True)
+        settings = await asyncio.to_thread(read_settings, True)
+        from .nichos import catalogo
+        settings["nichoCatalog"] = catalogo()
+        return settings
 
     async def _save_settings(self, payload):
         await asyncio.to_thread(write_settings, payload)

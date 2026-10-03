@@ -57,6 +57,9 @@ async function previewImageData(buffer) {
       image.clone().resize({ width: 1200, withoutEnlargement: true })
         .flatten({ background: '#ffffff' }).jpeg({ quality: 82 }).toBuffer({ resolveWithObject: true }),
     ]);
+    if (highQuality.info.width < 100 || highQuality.info.height < 100) {
+      throw new Error('A imagem da prévia é pequena demais.');
+    }
     return {
       thumbnail,
       uploadBuffer: highQuality.data,
@@ -64,6 +67,7 @@ async function previewImageData(buffer) {
       height: highQuality.info.height,
     };
   } catch (error) {
+    if (error.message === 'A imagem da prévia é pequena demais.') throw error;
     if (error.message?.includes('pixel limit')) throw new Error('A imagem da prévia é grande demais.');
     throw new Error('A imagem da prévia não está em um formato compatível.');
   }
@@ -84,6 +88,17 @@ function previewContent(command, { title, description, thumbnail }) {
       jpegThumbnail: thumbnail,
     },
   };
+}
+
+function isAmazonOffer(command) {
+  const linkUrl = String(command.text).match(/https?:\/\/\S+/)?.[0];
+  if (!linkUrl || !command.imageUrl) return false;
+  try {
+    const hostname = new URL(linkUrl).hostname.toLowerCase();
+    return hostname === 'amzn.to' || hostname === 'amazon.com.br' || hostname.endsWith('.amazon.com.br');
+  } catch {
+    return false;
+  }
 }
 
 async function buildStandardPreview(command) {
@@ -124,4 +139,6 @@ async function buildFallbackPreview(command) {
   };
 }
 
-module.exports = { buildFallbackPreview, buildStandardPreview, previewContent, thumbnailBuffer };
+module.exports = {
+  buildFallbackPreview, buildStandardPreview, isAmazonOffer, previewContent, thumbnailBuffer,
+};

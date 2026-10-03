@@ -188,7 +188,7 @@ class WhatsAppBridge:
             sendImage=send_image, title=title, timeout=70,
         )
         if result.get("previewMode") == "fallback":
-            log.info("WhatsApp: a prévia do link falhou; a imagem principal foi usada na prévia.")
+            log.info("WhatsApp: a imagem principal do produto foi usada na prévia.")
         elif result.get("previewMode") == "link":
             log.info("WhatsApp: prévia gerada com os dados fornecidos pelo link.")
         return str(result.get("messageId") or "")

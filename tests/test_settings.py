@@ -97,6 +97,23 @@ class SettingsTests(unittest.TestCase):
             self.assertFalse(saved["whatsappSendImage"])
             self.assertEqual(saved["whatsappGroupName"], "Família & Ofertas")
 
+    def test_salva_apenas_categorias_conhecidas(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with patch.multiple(
+                settings,
+                ENV_PATH=root / ".env",
+                YAML_PATH=root / "config.yaml",
+                NICHOS_PATH=root / "nichos.json",
+                APP_PATH=root / "app.json",
+            ):
+                settings.write_settings({"nichos": ["moda", "brinquedos"]})
+                self.assertEqual(
+                    settings.read_settings()["nichos"], ["moda", "brinquedos"]
+                )
+                with self.assertRaisesRegex(SettingsError, "categoria desconhecida"):
+                    settings.write_settings({"nichos": ["categoria-inexistente"]})
+
 
 if __name__ == "__main__":
     unittest.main()

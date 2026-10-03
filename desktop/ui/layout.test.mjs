@@ -29,6 +29,15 @@ test("exibe as credenciais da Amazon nas configurações", () => {
   assert.match(app, /field\("ALIEXPRESS_TRACKING_ID"/);
 });
 
+test("permite selecionar as categorias do ciclo automático", () => {
+  assert.match(app, /Categorias dos produtos/);
+  assert.match(app, /nicheCatalog\.map/);
+  assert.match(app, /name="nichos"/);
+  assert.match(app, /data\.getAll\("nichos"\)/);
+  assert.match(app, /request\("save_settings",\{env,nichos,preferences\}\)/);
+  assert.match(css, /\.category-grid/);
+});
+
 test("salvamento trata falha do início com o Windows", () => {
   assert.match(app, /catch\(error\)\{autostartError=String\(error\)/);
   assert.match(app, /if\(enabled!==preferences\.startWithWindows\)await invoke\("set_autostart"/);
@@ -80,6 +89,21 @@ test("centraliza ciclo, temporizadores e estados das operações", () => {
   assert.match(app, /browserInstalled/);
   assert.match(app, /mlSessionDetected/);
   assert.match(app, /Concluído nesta sessão/);
+});
+
+test("remove indicadores repetidos somente da Visão geral", () => {
+  const overview = app.slice(app.indexOf('if(state.page==="overview")'), app.indexOf('if(state.page==="search")'));
+  assert.match(app, /const nextCycle=compact\?""/);
+  assert.match(app, /const whatsapp=compact\?""/);
+  assert.doesNotMatch(overview, /metric-icon brand-box/);
+  assert.match(overview, /<small>Próximo ciclo<\/small>/);
+});
+
+test("organiza os indicadores restantes em toda a largura", () => {
+  assert.match(css, /\.metric-grid\s*\{[^}]*grid-template-columns:\s*repeat\(3,/);
+  assert.match(css, /\.metric-card\.wide\s*\{[^}]*grid-column:\s*1 \/ -1/);
+  assert.match(css, /\.timer-strip\.compact\s*\{[^}]*grid-template-columns:\s*repeat\(3,/);
+  assert.match(css, /@media \(max-width: 620px\)[\s\S]*\.timer-strip\.compact\s*\{[^}]*grid-template-columns:\s*1fr/);
 });
 
 test("distingue bot aguardando de ciclo realmente em execução", () => {

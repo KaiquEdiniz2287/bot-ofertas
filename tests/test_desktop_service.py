@@ -22,6 +22,14 @@ class RunningRuntime:
 
 
 class DesktopServiceTests(unittest.IsolatedAsyncioTestCase):
+    async def test_configuracoes_incluem_catalogo_de_categorias(self):
+        service = DesktopService(CaptureEmitter(), RunningRuntime())
+        with patch("ofertas.desktop_service.read_settings", return_value={"nichos": []}):
+            result = await service._get_settings({})
+
+        keys = {item["chave"] for item in result["nichoCatalog"]}
+        self.assertTrue({"tecnologia", "moda", "brinquedos", "casa"} <= keys)
+
     async def test_acao_emite_estado_livre_ao_terminar(self):
         emitter = CaptureEmitter()
         service = DesktopService(emitter, RunningRuntime())

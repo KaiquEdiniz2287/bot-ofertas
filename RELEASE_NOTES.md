@@ -1,3 +1,79 @@
+# 0.10.4 — Foto principal nas prévias da Amazon
+
+- Corrigida a prévia da Amazon que podia exibir apenas a logomarca da plataforma.
+- Ofertas da Amazon agora usam diretamente a imagem principal do produto ao montar a prévia do WhatsApp.
+- A prévia mantém o título, o texto completo e o link afiliado da oferta.
+- Mercado Livre, Shopee e AliExpress continuam usando o fluxo de prévia já existente.
+
+## Versionamento
+
+Versão: 0.10.3 → 0.10.4
+Tipo: PATCH
+Motivo: correção compatível da imagem selecionada para as prévias da Amazon.
+
+---
+
+# 0.10.3 — Organização dos cartões da Visão geral
+
+- Os três indicadores principais agora ocupam a largura disponível em colunas iguais.
+- O diretório de dados passou a ocupar uma linha completa, eliminando o espaço vazio à direita.
+- A barra compacta de tempos foi alinhada em três colunas uniformes.
+- O layout continua se reorganizando em duas colunas e depois em uma coluna em janelas menores.
+
+## Versionamento
+
+Versão: 0.10.2 → 0.10.3
+Tipo: PATCH
+Motivo: correção visual compatível da distribuição dos blocos na Visão geral.
+
+---
+
+# 0.10.2 — Visão geral sem indicadores repetidos
+
+- Removidos da barra da Visão geral os indicadores repetidos de próximo ciclo e conexão do WhatsApp.
+- Removido o cartão repetido do WhatsApp na mesma tela.
+- O próximo ciclo continua visível no cartão principal, e o status do WhatsApp permanece no painel superior.
+- A barra completa de temporizadores do Console permanece inalterada.
+
+## Versionamento
+
+Versão: 0.10.1 → 0.10.2
+Tipo: PATCH
+Motivo: pequeno ajuste visual compatível na organização da Visão geral.
+
+---
+
+# 0.10.1 — Imagem correta nas ofertas da Amazon
+
+- Corrigida a prévia branca exibida nas ofertas da Amazon no WhatsApp.
+- Pixels de rastreamento informados pela página da Amazon deixam de ser aceitos como imagem do produto.
+- Quando a prévia da Amazon fornece uma imagem inválida, o aplicativo usa automaticamente a foto principal real da oferta.
+- O envio das demais plataformas e o modo tradicional com imagem permanecem inalterados.
+
+## Versionamento
+
+Versão: 0.10.0 → 0.10.1
+Tipo: PATCH
+Motivo: correção compatível da imagem usada na prévia das ofertas da Amazon.
+
+---
+
+# 0.10.0 — Seleção de categorias no aplicativo
+
+- Restaurado o seletor de categorias na tela de Configurações do aplicativo desktop.
+- Mantido o catálogo já existente: tecnologia, celulares, games, casa, eletrodomésticos, moda, beleza, esporte, saúde, brinquedos e bebês, pet, automotivo e livros.
+- É possível selecionar vários nichos; deixar todos desmarcados mantém a pesquisa em todas as categorias.
+- A seleção é salva localmente e passa a valer no próximo ciclo, sem interromper o bot.
+- O fluxo existente de pesquisa e publicação de cada marketplace permanece inalterado.
+
+## Versionamento
+
+Versão: 0.9.3 → 0.10.0
+Tipo: MINOR
+Motivo: restauração de uma funcionalidade de seleção no aplicativo desktop.
+
+---
+
 # 0.9.3 — Imagens WebP nas prévias do WhatsApp
 
 - Corrigido o envio de prévias de ofertas do Mercado Livre e do AliExpress, cujas imagens são fornecidas em WebP.

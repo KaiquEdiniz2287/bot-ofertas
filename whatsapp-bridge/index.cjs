@@ -6,7 +6,9 @@ const readline = require('node:readline');
 const QRCode = require('qrcode');
 const pino = require('pino');
 const { Boom } = require('@hapi/boom');
-const { buildFallbackPreview, buildStandardPreview, previewContent, thumbnailBuffer } = require('./preview.cjs');
+const {
+  buildFallbackPreview, buildStandardPreview, isAmazonOffer, previewContent, thumbnailBuffer,
+} = require('./preview.cjs');
 const {
   default: makeWASocket,
   Browsers,
@@ -283,10 +285,14 @@ async function sendOffer(command) {
     });
   } else {
     let preview;
-    try {
-      preview = await buildStandardPreview(command);
-    } catch {
+    if (isAmazonOffer(command)) {
       preview = await buildFallbackPreview(command);
+    } else {
+      try {
+        preview = await buildStandardPreview(command);
+      } catch {
+        preview = await buildFallbackPreview(command);
+      }
     }
     preview = await attachHighQualityPreview(current, preview);
     previewMode = preview.mode;

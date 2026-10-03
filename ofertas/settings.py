@@ -205,6 +205,9 @@ def write_settings(payload: dict) -> None:
     if nichos is not None:
         if not isinstance(nichos, list) or not all(isinstance(item, str) for item in nichos):
             raise SettingsError("A seleção de categorias é inválida.")
+        from .nichos import NICHOS
+        if any(item not in NICHOS for item in nichos):
+            raise SettingsError("A seleção contém uma categoria desconhecida.")
         _atomic_write(NICHOS_PATH, json.dumps(nichos, ensure_ascii=False))
     if preferences is not None:
         group_jid = str(preferences.get("whatsappGroupJid") or "").strip()
