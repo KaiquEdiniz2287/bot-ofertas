@@ -154,10 +154,12 @@ impl Backend {
             "import_legacy_data",
             "whatsapp_connect",
             "whatsapp_groups",
+            "whatsapp_channel",
             "whatsapp_logout",
             "whatsapp_test",
             "get_pending_deliveries",
             "retry_delivery",
+            "autoresponder",
             "shutdown",
         ];
         if !ALLOWED.contains(&command.as_str()) {

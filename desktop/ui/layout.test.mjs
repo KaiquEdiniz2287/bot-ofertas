@@ -7,6 +7,15 @@ const app = readFileSync(new URL("./app.js", import.meta.url), "utf8");
 const html = readFileSync(new URL("./index.html", import.meta.url), "utf8");
 const rust = readFileSync(new URL("../src-tauri/src/main.rs", import.meta.url), "utf8");
 const backend = readFileSync(new URL("../src-tauri/src/backend.rs", import.meta.url), "utf8");
+const responder = readFileSync(new URL("./autoresponder/app.js", import.meta.url), "utf8");
+const responderCss = readFileSync(new URL("./autoresponder/styles.css", import.meta.url), "utf8");
+
+test("explica configurações e permite uma regra para todos os grupos", () => {
+  assert.match(responder, /Todos os grupos/);
+  assert.match(responder, /data-tip=/);
+  assert.match(responder, /tabindex="0"/);
+  assert.match(responderCss, /\.ar-help:is\(:hover,:focus-visible\)::after/);
+});
 
 test("contém largura e textos longos sem vazar da janela", () => {
   assert.match(css, /grid-template-columns:\s*230px minmax\(0, 1fr\)/);
@@ -69,12 +78,25 @@ test("permite trocar foto completa por prévia do produto no WhatsApp", () => {
   assert.match(app, /prévia do link; se ela falhar, o app usa a imagem principal/);
 });
 
+test("configura grupo e Canal do WhatsApp como destinos independentes", () => {
+  assert.match(app, /name="whatsappChannelEnabled"/);
+  assert.match(app, /id="whatsapp-channel"/);
+  assert.match(app, /data-action="wchannel"/);
+  assert.match(app, /data-action="wtestchannel"/);
+  assert.match(app, /request\("whatsapp_channel",\{reference\}\)/);
+  assert.match(app, /pausa de 5 segundos entre os dois envios/);
+  assert.match(css, /\.destination-card/);
+  assert.match(backend, /"whatsapp_channel"/);
+});
+
 test("oferece busca avulsa sem misturar com a operação do bot", () => {
   assert.match(html, /data-page="search"/);
   assert.match(app, /request\("search_products",\{query\}\)/);
   assert.match(app, /Copiar oferta completa/);
   assert.match(app, /navigator\.clipboard\.writeText\(result\.text\)/);
   assert.match(app, /não publica, não entra no histórico e não pausa o bot/);
+  assert.match(app, /até três resultados/);
+  assert.match(app, /Top \$\{Number\(result\.rank\)\|\|1\}/);
   assert.match(css, /\.search-results/);
   assert.equal((backend.match(/"search_products"/g) || []).length, 2);
 });

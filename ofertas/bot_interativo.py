@@ -5,10 +5,13 @@ import asyncio
 import datetime as dt
 import logging
 import secrets
+import sys
+import warnings
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (Application, CallbackQueryHandler, CommandHandler,
                           ContextTypes, MessageHandler, filters)
+from telegram.warnings import PTBUserWarning
 
 from . import db, pipeline
 from .config import config
@@ -187,7 +190,17 @@ def criar_aplicacao(whatsapp=None, state_callback=None) -> Application:
     if not config.bot_token:
         raise SystemExit("TELEGRAM_BOT_TOKEN não configurado — veja o README (passo 1).")
 
-    app = Application.builder().token(config.bot_token).build()
+    with warnings.catch_warnings():
+        if getattr(sys, "frozen", False):
+            # No PyInstaller, a comparação entre caminhos do stack e __file__
+            # da biblioteca falha, mesmo usando o ApplicationBuilder abaixo.
+            warnings.filterwarnings(
+                "ignore",
+                message=r"^`Application` instances should be built via the `ApplicationBuilder`\.$",
+                category=PTBUserWarning,
+                module=r"^telegram\.ext\._applicationbuilder$",
+            )
+        app = Application.builder().token(config.bot_token).build()
     app.bot_data["whatsapp"] = whatsapp
     app.bot_data["state_callback"] = state_callback
     app.add_handler(CommandHandler("start", _cmd_start))

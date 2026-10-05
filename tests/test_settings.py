@@ -90,12 +90,31 @@ class SettingsTests(unittest.TestCase):
                     "whatsappEnabled": True,
                     "whatsappSendImage": False,
                     "whatsappGroupJid": "123456@g.us",
-                    "whatsappGroupName": "Família & Ofertas",
+                    "whatsappGroupName": "Família 🛒 & Ofertas",
+                    "whatsappChannelEnabled": True,
+                    "whatsappChannelJid": "120363123456789@newsletter",
+                    "whatsappChannelName": "Promoções & Ação 🔥",
                 }})
                 saved = settings.read_settings()["preferences"]
             self.assertTrue(saved["whatsappEnabled"])
             self.assertFalse(saved["whatsappSendImage"])
-            self.assertEqual(saved["whatsappGroupName"], "Família & Ofertas")
+            self.assertEqual(saved["whatsappGroupName"], "Família 🛒 & Ofertas")
+            self.assertTrue(saved["whatsappChannelEnabled"])
+            self.assertEqual(saved["whatsappChannelJid"], "120363123456789@newsletter")
+            self.assertEqual(saved["whatsappChannelName"], "Promoções & Ação 🔥")
+
+    def test_canal_ativo_precisa_ser_validado(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with patch.multiple(
+                settings,
+                ENV_PATH=root / ".env",
+                YAML_PATH=root / "config.yaml",
+                NICHOS_PATH=root / "nichos.json",
+                APP_PATH=root / "app.json",
+            ):
+                with self.assertRaisesRegex(SettingsError, "Valide e selecione"):
+                    settings.write_settings({"preferences": {"whatsappChannelEnabled": True}})
 
     def test_salva_apenas_categorias_conhecidas(self):
         with tempfile.TemporaryDirectory() as tmp:

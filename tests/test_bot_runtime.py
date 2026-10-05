@@ -1,9 +1,11 @@
 import datetime as dt
 import unittest
+import warnings
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
-from ofertas.bot_interativo import CYCLE_JOB_KWARGS, BotRuntime, _job_ciclo
+from ofertas.bot_interativo import CYCLE_JOB_KWARGS, BotRuntime, _job_ciclo, criar_aplicacao
+from telegram.warnings import PTBUserWarning
 
 
 class FakeUpdater:
@@ -39,6 +41,22 @@ class FakeApplication:
 
 
 class BotRuntimeTests(unittest.IsolatedAsyncioTestCase):
+    async def test_builder_empacotado_filtra_apenas_falso_aviso_de_caminho(self):
+        for frozen in (False, True):
+            with self.subTest(frozen=frozen), warnings.catch_warnings(record=True) as captured:
+                warnings.simplefilter("always")
+                with patch("ofertas.bot_interativo.sys.frozen", frozen, create=True), patch(
+                    "telegram.ext._application.was_called_by", return_value=False,
+                ), patch("ofertas.bot_interativo.config.bot_token", "123456:TEST_TOKEN"), patch(
+                    "ofertas.bot_interativo.config.chat_id", "",
+                ):
+                    app = criar_aplicacao()
+                warnings.warn("Outro aviso operacional", PTBUserWarning)
+            builder_warnings = [w for w in captured if "ApplicationBuilder" in str(w.message)]
+            self.assertEqual(len(builder_warnings), 0 if frozen else 1)
+            self.assertTrue(any("Outro aviso operacional" in str(w.message) for w in captured))
+            self.assertIsNotNone(app.job_queue)
+
     async def test_ciclo_atrasado_executa_e_renova_o_proximo_horario(self):
         states = []
         next_run = dt.datetime.now(dt.timezone.utc) + dt.timedelta(minutes=45)

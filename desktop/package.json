@@ -1,15 +1,17 @@
 {
   "name": "bot-ofertas-desktop",
-  "version": "0.10.4",
+  "version": "0.13.2",
   "private": true,
   "scripts": {
+    "prestart": "powershell -NoProfile -ExecutionPolicy Bypass -File ..\\scripts\\prepare-dev.ps1",
     "start": "tauri dev",
+    "predev": "powershell -NoProfile -ExecutionPolicy Bypass -File ..\\scripts\\prepare-dev.ps1",
     "dev": "tauri dev",
     "build": "powershell -NoProfile -ExecutionPolicy Bypass -File ..\\scripts\\build-desktop.ps1",
     "release": "node ../scripts/build-release.mjs",
     "set-version": "node ../scripts/set-version.mjs",
     "tauri": "tauri",
-    "test": "node --test ui/*.test.mjs"
+    "test": "node --test ui/*.test.mjs ui/autoresponder/*.test.mjs"
   },
   "devDependencies": {
     "@tauri-apps/cli": "2.11.5"

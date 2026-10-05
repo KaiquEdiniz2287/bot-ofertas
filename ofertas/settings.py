@@ -186,6 +186,7 @@ def read_settings(mask_secrets: bool = True) -> dict:
             "startWithWindows": False,
             "autoStartBot": False,
             "whatsappSendImage": True,
+            "whatsappChannelEnabled": False,
             **_read_json(APP_PATH, {}),
         },
     }
@@ -213,6 +214,12 @@ def write_settings(payload: dict) -> None:
         group_jid = str(preferences.get("whatsappGroupJid") or "").strip()
         if group_jid and not group_jid.endswith("@g.us"):
             raise SettingsError("Selecione um grupo válido do WhatsApp.")
+        channel_enabled = bool(preferences.get("whatsappChannelEnabled", False))
+        channel_jid = str(preferences.get("whatsappChannelJid") or "").strip()
+        if channel_jid and not channel_jid.endswith("@newsletter"):
+            raise SettingsError("Valide o link do Canal do WhatsApp antes de salvar.")
+        if channel_enabled and not channel_jid:
+            raise SettingsError("Valide e selecione um Canal do WhatsApp.")
         allowed = {
             "startWithWindows": bool(preferences.get("startWithWindows", False)),
             "autoStartBot": bool(preferences.get("autoStartBot", False)),
@@ -220,6 +227,9 @@ def write_settings(payload: dict) -> None:
             "whatsappSendImage": bool(preferences.get("whatsappSendImage", True)),
             "whatsappGroupJid": group_jid[:160],
             "whatsappGroupName": str(preferences.get("whatsappGroupName") or "").strip()[:160],
+            "whatsappChannelEnabled": channel_enabled,
+            "whatsappChannelJid": channel_jid[:160],
+            "whatsappChannelName": str(preferences.get("whatsappChannelName") or "").strip()[:160],
         }
         _atomic_write(APP_PATH, json.dumps(allowed, ensure_ascii=False, indent=2) + "\n")
 

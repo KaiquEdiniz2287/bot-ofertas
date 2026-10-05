@@ -2,7 +2,7 @@ import unittest
 from unittest.mock import patch
 
 from ofertas.models import Oferta
-from ofertas.product_search import _melhor, buscar
+from ofertas.product_search import _melhor, _melhores, buscar
 from ofertas.sources.mercadolivre import _url_produto
 
 
@@ -41,6 +41,22 @@ class ProductSearchTests(unittest.TestCase):
 
         self.assertEqual(chosen.titulo, "Fone Bluetooth sem fio")
 
+    def test_retorna_ate_tres_melhores_sem_produtos_repetidos(self):
+        offers = [
+            offer("shopee", "Capa para telefone", 80),
+            offer("shopee", "Fone Bluetooth básico", 20),
+            offer("shopee", "Fone Bluetooth premium", 40),
+            offer("shopee", "Fone Bluetooth esportivo", 30),
+        ]
+        for index, item in enumerate(offers):
+            item.id_produto = str(index)
+        offers.append(offers[2])
+
+        chosen = _melhores(offers, "fone bluetooth")
+
+        self.assertEqual(len(chosen), 3)
+        self.assertEqual([item.desconto for item in chosen], [40, 30, 20])
+
     @patch("ofertas.product_search.config.fonte_aliexpress", {"ativa": True})
     @patch("ofertas.product_search.config.fonte_amazon", {"ativa": True})
     @patch("ofertas.product_search.config.fonte_shopee", {"ativa": True})
@@ -58,7 +74,10 @@ class ProductSearchTests(unittest.TestCase):
         ml_offer.url_afiliado = ""
         ml_search.return_value = [ml_offer]
         ml_links.side_effect = lambda offers: setattr(offers[0], "url_afiliado", "https://meli.la/teste")
-        shopee_search.return_value = [offer("shopee", "Fone Bluetooth Shopee")]
+        shopee_first = offer("shopee", "Fone Bluetooth Shopee Premium", 30)
+        shopee_second = offer("shopee", "Fone Bluetooth Shopee Básico", 20)
+        shopee_second.id_produto = "shopee-2"
+        shopee_search.return_value = [shopee_first, shopee_second]
         amazon_search.return_value = [offer("amazon", "Fone Bluetooth Amazon")]
         aliexpress_search.return_value = [offer("aliexpress", "Fone Bluetooth AliExpress")]
         ali_links.side_effect = lambda offers: setattr(
@@ -68,8 +87,12 @@ class ProductSearchTests(unittest.TestCase):
         result = buscar("fone bluetooth")
 
         self.assertEqual([item["platform"] for item in result["results"]], [
-            "mercadolivre", "shopee", "amazon", "aliexpress",
+            "mercadolivre", "shopee", "shopee", "amazon", "aliexpress",
         ])
+        self.assertEqual(
+            [item["rank"] for item in result["results"] if item["platform"] == "shopee"],
+            [1, 2],
+        )
         self.assertFalse(result["errors"])
         self.assertTrue(all("🔥 *Fone Bluetooth" in item["text"] for item in result["results"]))
         self.assertTrue(all("🛒 http" in item["text"] for item in result["results"]))

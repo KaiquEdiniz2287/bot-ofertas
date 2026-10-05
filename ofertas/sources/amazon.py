@@ -287,7 +287,11 @@ def _buscar_por_scraping(tarefas: list[dict], paginas: int | None = None,
                     log.error("Amazon %s: %s", tarefa["rotulo"], e)
                     return list(ofertas.values())
                 if r.status_code != 200 or _bloqueado(r.text):
-                    log.warning("Amazon bloqueou a busca (HTTP %s) — parando este ciclo", r.status_code)
+                    log.warning(
+                        "Amazon não liberou a consulta (HTTP %s): indisponibilidade ou bloqueio temporário. "
+                        "Busca da Amazon encerrada nesta execução; as demais plataformas continuam.",
+                        r.status_code,
+                    )
                     return list(ofertas.values())
                 achadas = _parse_busca(r.text, tarefa["rotulo"])
                 if achadas or tentativa == 2:
@@ -321,7 +325,7 @@ def buscar_ofertas() -> list[Oferta]:
                 log.error("Amazon (Creators API): %s — usando scraping", e)
     tarefas = _tarefas_do_ciclo()
     ofertas = _buscar_por_scraping(tarefas)
-    log.info("Amazon (scraping): %d ofertas em %d página(s): %s",
+    log.info("Amazon (scraping): %d ofertas coletadas; %d consulta(s) programada(s): %s",
              len(ofertas), len(tarefas), ", ".join(t["rotulo"] for t in tarefas))
     return ofertas
 

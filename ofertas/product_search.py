@@ -20,6 +20,7 @@ _LABELS = {
     "amazon": "Amazon",
     "aliexpress": "AliExpress",
 }
+RESULTS_PER_SOURCE = 3
 
 
 def _normalizar(value: str) -> str:
@@ -27,7 +28,7 @@ def _normalizar(value: str) -> str:
     return "".join(char for char in normalized if not unicodedata.combining(char))
 
 
-def _melhor(ofertas: list[Oferta], termo: str) -> Oferta | None:
+def _melhores(ofertas: list[Oferta], termo: str, limite: int = RESULTS_PER_SOURCE) -> list[Oferta]:
     palavras = [word for word in _normalizar(termo).split() if len(word) > 1]
 
     def score(item: tuple[int, Oferta]) -> tuple:
@@ -37,28 +38,44 @@ def _melhor(ofertas: list[Oferta], termo: str) -> Oferta | None:
         all_matches = bool(palavras) and matches == len(palavras)
         return all_matches, matches, bool(oferta.url_afiliado), oferta.desconto or 0, -index
 
-    return max(enumerate(ofertas), key=score)[1] if ofertas else None
+    melhores, vistos = [], set()
+    for _, oferta in sorted(enumerate(ofertas), key=score, reverse=True):
+        if oferta.uid in vistos:
+            continue
+        vistos.add(oferta.uid)
+        melhores.append(oferta)
+        if len(melhores) >= limite:
+            break
+    return melhores
 
 
-def _buscar_fonte(key: str, termo: str) -> Oferta | None:
+def _melhor(ofertas: list[Oferta], termo: str) -> Oferta | None:
+    melhores = _melhores(ofertas, termo, 1)
+    return melhores[0] if melhores else None
+
+
+def _buscar_fonte(key: str, termo: str) -> list[Oferta]:
     functions = {
         "mercadolivre": mercadolivre.buscar_produtos,
         "shopee": shopee.buscar_produtos,
         "amazon": amazon.buscar_produtos,
         "aliexpress": aliexpress.buscar_produtos,
     }
-    offer = _melhor(functions[key](termo, 10), termo)
-    if offer and key == "mercadolivre":
-        mercadolivre.gerar_links_afiliado([offer])
-    if offer and key == "aliexpress":
-        aliexpress.gerar_links_afiliado([offer])
-    if offer and not offer.url_afiliado:
+    offers = _melhores(functions[key](termo, 10), termo)
+    if not offers:
+        return []
+    if offers and key == "mercadolivre":
+        mercadolivre.gerar_links_afiliado(offers)
+    if offers and key == "aliexpress":
+        aliexpress.gerar_links_afiliado(offers)
+    offers = [offer for offer in offers if offer.url_afiliado]
+    if not offers:
         raise RuntimeError("a plataforma não devolveu um link de afiliado para o produto")
-    return offer
+    return offers
 
 
 def buscar(termo: str) -> dict:
-    """Retorna no máximo um resultado afiliado por fonte, sem persistir dados."""
+    """Retorna os melhores resultados afiliados de cada fonte, sem persistir dados."""
     termo = termo.strip()
     if len(termo) < 2:
         raise ValueError("Digite pelo menos dois caracteres para pesquisar.")
@@ -76,16 +93,14 @@ def buscar(termo: str) -> dict:
         for future in as_completed(futures):
             key = futures[future]
             try:
-                offer = future.result()
-                if not offer:
+                offers = future.result()
+                if not offers:
                     errors.append({"platform": key, "label": _LABELS[key], "message": "Nenhum produto encontrado."})
                     continue
-                results.append({
-                    "platform": key,
-                    "label": _LABELS[key],
-                    "offer": asdict(offer),
-                    "text": montar_whatsapp(offer),
-                })
+                results.extend({
+                    "platform": key, "label": _LABELS[key], "rank": rank,
+                    "offer": asdict(offer), "text": montar_whatsapp(offer),
+                } for rank, offer in enumerate(offers, 1))
             except Exception as exc:
                 log.warning("Busca manual no %s falhou: %s", _LABELS[key], exc)
                 errors.append({"platform": key, "label": _LABELS[key], "message": str(exc)})

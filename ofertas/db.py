@@ -84,20 +84,40 @@ def listar(limit: int = 100, offset: int = 0) -> list[dict]:
     return [dict(row) for row in rows]
 
 
-def preparar_entrega_whatsapp(oferta: Oferta, destino: str, validade_horas: int = 6) -> bool:
+def preparar_entregas_whatsapp(
+    oferta: Oferta, destinos: list[str], validade_horas: int = 6
+) -> list[str]:
+    destinos = list(dict.fromkeys(destino.strip() for destino in destinos if destino.strip()))
+    if not destinos:
+        return []
     agora = dt.datetime.now()
     expira = agora + dt.timedelta(hours=validade_horas)
-    with closing(_conn()) as c, c:
+    with closing(_conn()) as c:
+        c.execute("BEGIN IMMEDIATE")
+        placeholders = ",".join("?" for _ in destinos)
+        existente = c.execute(
+            f"SELECT 1 FROM entregas WHERE uid = ? AND canal = 'whatsapp' "
+            f"AND destino IN ({placeholders}) LIMIT 1",
+            (oferta.uid, *destinos),
+        ).fetchone()
+        if existente:
+            c.commit()
+            return []
         c.execute(
             "INSERT OR IGNORE INTO publicacoes (uid, oferta_json, criada_em, expira_em) VALUES (?, ?, ?, ?)",
             (oferta.uid, json.dumps(asdict(oferta), ensure_ascii=False),
              agora.isoformat(timespec="seconds"), expira.isoformat(timespec="seconds")),
         )
-        inserted = c.execute(
-            "INSERT OR IGNORE INTO entregas (uid, canal, destino, status) VALUES (?, 'whatsapp', ?, 'pending')",
-            (oferta.uid, destino),
+        c.executemany(
+            "INSERT INTO entregas (uid, canal, destino, status) VALUES (?, 'whatsapp', ?, 'pending')",
+            ((oferta.uid, destino) for destino in destinos),
         )
-        return inserted.rowcount == 1
+        c.commit()
+        return destinos
+
+
+def preparar_entrega_whatsapp(oferta: Oferta, destino: str, validade_horas: int = 6) -> bool:
+    return bool(preparar_entregas_whatsapp(oferta, [destino], validade_horas))
 
 
 def marcar_entrega_whatsapp(

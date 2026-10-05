@@ -46,7 +46,9 @@ def _is_signal_decryption_noise(text: str) -> bool:
 
 
 class WhatsAppError(RuntimeError):
-    pass
+    def __init__(self, message: str, code: str = ''):
+        super().__init__(message)
+        self.code = code
 
 
 class WhatsAppBridge:
@@ -59,6 +61,9 @@ class WhatsAppBridge:
         self._reader_task: asyncio.Task | None = None
         self._stderr_task: asyncio.Task | None = None
         self._lock = asyncio.Lock()
+        self.responses_active = False
+        self._send_lock = asyncio.Lock()
+        self._offers_waiting = 0
 
     @property
     def connected(self) -> bool:
@@ -79,7 +84,8 @@ class WhatsAppBridge:
     async def _ensure_started(self) -> None:
         if self._process and self._process.returncode is None:
             return
-        env = {**os.environ, "BOT_OFERTAS_WHATSAPP_AUTH": str(PATHS.data_dir / "whatsapp-session")}
+        env = {**os.environ, "BOT_OFERTAS_WHATSAPP_AUTH": str(PATHS.data_dir / "whatsapp-session"),
+               "BOT_OFERTAS_RESPONDER_MEDIA": str(PATHS.data_dir / "autoresponder-media")}
         try:
             self._process = await asyncio.create_subprocess_exec(
                 *self._command(), stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
@@ -136,8 +142,8 @@ class WhatsAppBridge:
                     text.startswith("Failed to decrypt") or "Over 2000 messages" in text
                 ):
                     log.info(
-                        "WhatsApp renovou uma sessão criptográfica antiga. "
-                        "A conexão e os envios continuam ativos."
+                        "WhatsApp renovou uma sessão criptográfica antiga e não conseguiu decifrar uma mensagem. "
+                        "Essa mensagem não poderá acionar respostas automáticas; a conexão não foi encerrada."
                     )
                     decryption_warning_emitted = True
                 continue
@@ -169,7 +175,8 @@ class WhatsAppBridge:
             self._pending.pop(request_id, None)
             raise WhatsAppError("O WhatsApp demorou demais para responder.") from exc
         if not response.get("ok"):
-            raise WhatsAppError(str(response.get("error") or "A operação do WhatsApp falhou."))
+            raise WhatsAppError(str(response.get("error") or "A operação do WhatsApp falhou."),
+                                str(response.get('code') or ''))
         return response.get("result") or {}
 
     async def connect(self) -> dict:
@@ -179,22 +186,46 @@ class WhatsAppBridge:
     async def list_groups(self) -> list[dict]:
         return (await self._request("list_groups")).get("groups", [])
 
+    async def resolve_channel(self, reference: str) -> dict:
+        return await self._request("resolve_channel", reference=reference)
+
     async def send_offer(
-        self, group_jid: str, text: str, image_url: str | None = None,
+        self, destination_jid: str, text: str, image_url: str | None = None,
         *, send_image: bool = True, title: str = "",
     ) -> str:
-        result = await self._request(
-            "send_offer", groupJid=group_jid, text=text, imageUrl=image_url or "",
-            sendImage=send_image, title=title, timeout=70,
-        )
+        self._offers_waiting += 1
+        try:
+            async with self._send_lock:
+                result = await self._request(
+                    "send_offer", destinationJid=destination_jid, text=text, imageUrl=image_url or "",
+                    sendImage=send_image, title=title, timeout=70,
+                )
+        finally:
+            self._offers_waiting -= 1
         if result.get("previewMode") == "fallback":
             log.info("WhatsApp: a imagem principal do produto foi usada na prévia.")
         elif result.get("previewMode") == "link":
             log.info("WhatsApp: prévia gerada com os dados fornecidos pelo link.")
         return str(result.get("messageId") or "")
 
-    async def send_test(self, group_jid: str) -> None:
-        await self._request("send_test", groupJid=group_jid)
+    async def send_test(self, destination_jid: str) -> None:
+        async with self._send_lock:
+            await self._request("send_test", destinationJid=destination_jid)
+
+    async def configure_responses(self, groups: list[str], since: float) -> None:
+        await self._request("configure_responses", groups=groups, since=since)
+
+    async def send_reply(self, prepare) -> str:
+        # A espera do respondedor fica fora da trava; ofertas aguardando têm prioridade.
+        while self._offers_waiting:
+            await asyncio.sleep(.1)
+        async with self._send_lock:
+            post, message = prepare()
+            if not self.connected:
+                raise WhatsAppError("WhatsApp desconectado; não haverá repetição automática.", 'NOT_CONNECTED')
+            result = await self._request("send_reply", groupJid=message['chat'],
+                                         cacheId=message['cacheId'], post=post, timeout=70)
+            return str(result.get('messageId') or '')
 
     async def logout(self) -> None:
         await self._request("logout")

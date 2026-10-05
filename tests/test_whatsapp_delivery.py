@@ -87,6 +87,70 @@ class WhatsAppDeliveryTests(unittest.IsolatedAsyncioTestCase):
             send_image=False, title=item.titulo,
         )
 
+    async def test_envia_ao_grupo_e_ao_canal_com_pausa(self):
+        item = offer()
+        item.imagem = "https://img.test/produto.jpg"
+        whatsapp = AsyncMock()
+        whatsapp.connected = True
+        whatsapp.send_offer.side_effect = ["msg-grupo", "msg-canal"]
+        with tempfile.TemporaryDirectory() as tmp, patch.object(db, "_DB", Path(tmp) / "test.db"), patch(
+            "ofertas.pipeline.dentro_do_horario", return_value=True
+        ), patch("ofertas.pipeline.coletar", return_value=[item]), patch(
+            "ofertas.pipeline.postar_oferta", new=AsyncMock()
+        ), patch(
+            "ofertas.pipeline.read_settings",
+            return_value={"preferences": {
+                "whatsappEnabled": True,
+                "whatsappGroupJid": "grupo@g.us",
+                "whatsappChannelEnabled": True,
+                "whatsappChannelJid": "canal@newsletter",
+                "whatsappSendImage": False,
+            }},
+        ), patch("ofertas.pipeline.asyncio.sleep", new=AsyncMock()) as sleep, patch.object(
+            pipeline.config, "max_posts_por_ciclo", 1
+        ), patch.object(pipeline.config, "desconto_minimo", 0), patch.object(
+            pipeline.config, "preco_minimo", 0
+        ), patch.object(pipeline.config, "preco_maximo", 0), patch.object(
+            pipeline.config, "palavras_bloqueadas", []
+        ):
+            await pipeline.executar_ciclo(object(), whatsapp)
+
+        self.assertEqual(whatsapp.send_offer.await_count, 2)
+        self.assertEqual(whatsapp.send_offer.await_args_list[0].args[0], "grupo@g.us")
+        self.assertEqual(whatsapp.send_offer.await_args_list[1].args[0], "canal@newsletter")
+        sleep.assert_awaited_once_with(5)
+
+    async def test_nao_publica_somente_no_canal_quando_a_oferta_ja_existia_no_grupo(self):
+        item = offer()
+        whatsapp = AsyncMock()
+        whatsapp.connected = True
+        with tempfile.TemporaryDirectory() as tmp, patch.object(db, "_DB", Path(tmp) / "test.db"):
+            self.assertTrue(db.preparar_entrega_whatsapp(item, "grupo@g.us"))
+            db.marcar_entrega_whatsapp(item.uid, "grupo@g.us", True, "msg-antiga")
+            with patch(
+                "ofertas.pipeline.dentro_do_horario", return_value=True
+            ), patch("ofertas.pipeline.coletar", return_value=[item]), patch(
+                "ofertas.pipeline.postar_oferta", new=AsyncMock()
+            ), patch(
+                "ofertas.pipeline.read_settings",
+                return_value={"preferences": {
+                    "whatsappEnabled": True,
+                    "whatsappGroupJid": "grupo@g.us",
+                    "whatsappChannelEnabled": True,
+                    "whatsappChannelJid": "canal@newsletter",
+                }},
+            ), patch.object(
+                pipeline.config, "max_posts_por_ciclo", 1
+            ), patch.object(pipeline.config, "desconto_minimo", 0), patch.object(
+                pipeline.config, "preco_minimo", 0
+            ), patch.object(pipeline.config, "preco_maximo", 0), patch.object(
+                pipeline.config, "palavras_bloqueadas", []
+            ):
+                await pipeline.executar_ciclo(object(), whatsapp)
+
+            whatsapp.send_offer.assert_not_awaited()
+            self.assertIsNone(db.obter_entrega_whatsapp(item.uid, "canal@newsletter"))
+
     async def test_pendencia_nao_e_reenviada_automaticamente(self):
         whatsapp = AsyncMock()
         whatsapp.connected = True

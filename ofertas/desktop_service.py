@@ -61,6 +61,9 @@ class DesktopService:
         self._ml_lock = asyncio.Lock()
         self._search_lock = asyncio.Lock()
         self._shutdown = False
+        self._responder = None
+        self._responder_start_task = None
+        self._responder_auto_start_pending = True
         self._handlers = {
             "get_status": self._get_status,
             "get_settings": self._get_settings,
@@ -76,11 +79,13 @@ class DesktopService:
             "import_legacy_data": self._import_legacy_data,
             "whatsapp_connect": self._whatsapp_connect,
             "whatsapp_groups": self._whatsapp_groups,
+            "whatsapp_channel": self._whatsapp_channel,
             "whatsapp_logout": self._whatsapp_logout,
             "whatsapp_test": self._whatsapp_test,
             "get_pending_deliveries": self._get_pending_deliveries,
             "retry_delivery": self._retry_delivery,
             "shutdown": self._shutdown_service,
+            "autoresponder": self._autoresponder,
         }
 
     def _update_runtime_state(self, updates: dict) -> None:
@@ -88,8 +93,17 @@ class DesktopService:
         self._emit_state()
 
     def _on_whatsapp_event(self, event: str, payload: dict) -> None:
+        if event == "incoming_messages":
+            if self._responder:
+                self._responder.runtime.receive(payload)
+            return
         if event == "connection_state":
             status = str(payload.get("status") or "DISCONNECTED")
+            if self._responder and self._responder.runtime.running:
+                if status == 'CONNECTED' and self._last_whatsapp_status != 'CONNECTED':
+                    asyncio.create_task(self._responder.runtime.resubscribe())
+                elif status in ('RECONNECTING', 'DISCONNECTED', 'LOGGED_OUT', 'RECONNECT_FAILED'):
+                    self._responder.runtime.disconnected()
             labels = {
                 "CONNECTING": "conectando",
                 "AWAITING_QR": "aguardando leitura do QR Code",
@@ -104,6 +118,9 @@ class DesktopService:
             if detail:
                 self.emitter.log("WARNING", "WhatsApp", detail)
             if status == "CONNECTED" and self._last_whatsapp_status != "CONNECTED":
+                if self._responder and self._responder_auto_start_pending and not self._responder.runtime.running and self._responder.repo.config()['settings']['autoStart']:
+                    self._responder_auto_start_pending = False
+                    self._responder_start_task = asyncio.create_task(self._start_responder_safely())
                 pending = db.total_pendentes_whatsapp()
                 if pending:
                     self.emitter.log(
@@ -155,11 +172,40 @@ class DesktopService:
     async def _get_status(self, _):
         return self._state()
 
+    async def _autoresponder(self, payload):
+        if self._responder is None:
+            from .autoresponder.service import Service
+            self._responder = Service(DATA_DIR, self.whatsapp, lambda: self.emitter.emit({"type": "autoresponder"}))
+        if payload.get('action') in ('start', 'stop'):
+            self._responder_auto_start_pending = False
+        return await self._responder.handle(payload)
+
+    async def _start_responder_safely(self):
+        try:
+            await self._responder.runtime.start()
+        except Exception as exc:
+            self.emitter.log('WARNING', 'respostas', f'Não foi possível iniciar as respostas: {exc}')
+
     async def _get_settings(self, _):
         settings = await asyncio.to_thread(read_settings, True)
         from .nichos import catalogo
         settings["nichoCatalog"] = catalogo()
         return settings
+
+    async def _connect_whatsapp_on_start(self) -> bool:
+        try:
+            preferences = (await asyncio.to_thread(read_settings, False)).get("preferences") or {}
+            if not preferences.get("whatsappEnabled"):
+                return False
+            self.emitter.log("INFO", "WhatsApp", "Tentando restaurar a conexão automaticamente.")
+            await self.whatsapp.connect()
+        except Exception as exc:
+            self.emitter.log(
+                "WARNING", "WhatsApp",
+                f"A conexão automática não foi concluída: {sanitize(exc)} Use o botão Conectar para tentar novamente.",
+            )
+            return False
+        return True
 
     async def _save_settings(self, payload):
         await asyncio.to_thread(write_settings, payload)
@@ -264,6 +310,11 @@ class DesktopService:
             else:
                 from .sources import aliexpress
                 offers = aliexpress.buscar_ofertas(10)
+            if not offers:
+                raise PublicError(
+                    f"Teste {source}: nenhuma oferta foi retornada; a busca não pôde ser validada. "
+                    "Consulte o console para verificar bloqueio temporário, configuração ou ausência de resultados."
+                )
             return [asdict(offer) for offer in offers[:10]]
 
         return {"offers": await self._exclusive(f"Teste {source}", test, ml_profile=source == "ml")}
@@ -327,17 +378,31 @@ class DesktopService:
             raise PublicError("Conecte o WhatsApp antes de carregar os grupos.")
         return {"groups": await self.whatsapp.list_groups()}
 
+    async def _whatsapp_channel(self, payload):
+        if not self.whatsapp.connected:
+            raise PublicError("Conecte o WhatsApp antes de validar o Canal.")
+        reference = str(payload.get("reference") or "").strip()
+        if not reference:
+            raise PublicError("Cole o link ou ID do Canal do WhatsApp.")
+        channel = await self.whatsapp.resolve_channel(reference)
+        self.emitter.log(
+            "INFO", "WhatsApp",
+            f"Canal validado: {channel.get('name') or 'Canal do WhatsApp'}.",
+        )
+        return channel
+
     async def _whatsapp_logout(self, _):
         await self.whatsapp.logout()
         self._emit_state()
         return {"loggedOut": True}
 
     async def _whatsapp_test(self, payload):
-        group_jid = str(payload.get("groupJid") or "")
+        destination_jid = str(payload.get("destinationJid") or payload.get("groupJid") or "")
         if not self.whatsapp.connected:
             raise PublicError("Conecte o WhatsApp antes de enviar o teste.")
-        await self.whatsapp.send_test(group_jid)
-        self.emitter.log("INFO", "WhatsApp", "Mensagem de teste enviada ao grupo selecionado.")
+        await self.whatsapp.send_test(destination_jid)
+        destination_label = "Canal" if destination_jid.endswith("@newsletter") else "grupo"
+        self.emitter.log("INFO", "WhatsApp", f"Mensagem de teste enviada ao {destination_label} selecionado.")
         return {"sent": True}
 
     async def _get_pending_deliveries(self, _):
@@ -376,6 +441,10 @@ class DesktopService:
 
     async def _shutdown_service(self, _):
         self._shutdown = True
+        if self._responder_start_task:
+            self._responder_start_task.cancel()
+        if self._responder:
+            await self._responder.runtime.close()
         await self.runtime.stop()
         await self.whatsapp.shutdown()
         return {"shutdown": True}
@@ -384,6 +453,9 @@ class DesktopService:
 async def _run(emitter: JsonEmitter) -> None:
     service = DesktopService(emitter)
     emitter.emit({"type": "ready", "state": service._state()})
+    if (DATA_DIR / 'autoresponder.db').exists():
+        await service._autoresponder({'action': 'status'})
+    await service._connect_whatsapp_on_start()
     while not service._shutdown:
         line = await asyncio.to_thread(sys.stdin.readline)
         if not line:
@@ -395,11 +467,19 @@ async def _run(emitter: JsonEmitter) -> None:
             response = {"type": "response", "id": None, "ok": False, "error": str(exc)}
         emitter.emit(response)
     await service.runtime.stop()
+    if service._responder:
+        await service._responder.runtime.close()
     await service.whatsapp.shutdown()
 
 
 def run_desktop() -> None:
     output = sys.stdout
+    # O Tauri envia NDJSON em UTF-8. No Windows, o Python empacotado pode usar
+    # CP1252 no pipe de entrada, corrompendo acentos e emojis antes do JSON.
+    if hasattr(sys.stdin, 'reconfigure'):
+        sys.stdin.reconfigure(encoding='utf-8', errors='strict')
+    if hasattr(output, 'reconfigure'):
+        output.reconfigure(encoding='utf-8', errors='replace')
     emitter = JsonEmitter(output)
     sys.stdout = _LineRedirector(emitter, "INFO", "stdout")
     sys.stderr = _LineRedirector(emitter, "ERROR", "stderr")

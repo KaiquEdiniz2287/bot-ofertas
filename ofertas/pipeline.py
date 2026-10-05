@@ -14,6 +14,7 @@ from .formatter import montar_whatsapp
 from .settings import read_settings
 
 log = logging.getLogger("ofertas.pipeline")
+WHATSAPP_DESTINATION_DELAY_SECONDS = 5
 
 
 def coletar() -> list[Oferta]:
@@ -131,6 +132,17 @@ def _duracao(segundos: int) -> str:
     return f"{minutos} minuto(s)" + (f" e {resto} segundo(s)" if resto else "")
 
 
+def _destinos_whatsapp(preferences: dict) -> list[tuple[str, str]]:
+    destinations = []
+    group = str(preferences.get("whatsappGroupJid") or "")
+    channel = str(preferences.get("whatsappChannelJid") or "")
+    if group:
+        destinations.append(("grupo", group))
+    if preferences.get("whatsappChannelEnabled") and channel:
+        destinations.append(("Canal", channel))
+    return destinations
+
+
 async def executar_ciclo(bot: Bot, whatsapp=None, state_callback=None) -> int:
     """Um ciclo completo: coletar -> filtrar -> escolher -> gerar links -> postar. Retorna nº de posts."""
     if not dentro_do_horario():
@@ -160,7 +172,7 @@ async def executar_ciclo(bot: Bot, whatsapp=None, state_callback=None) -> int:
 
     preferences = read_settings(False).get("preferences") or {}
     whatsapp_enabled = bool(preferences.get("whatsappEnabled"))
-    whatsapp_group = str(preferences.get("whatsappGroupJid") or "")
+    whatsapp_destinations = _destinos_whatsapp(preferences) if whatsapp_enabled else []
     whatsapp_send_image = preferences.get("whatsappSendImage", True) is not False
     postadas = 0
     enviadas_whatsapp = 0
@@ -169,9 +181,18 @@ async def executar_ciclo(bot: Bot, whatsapp=None, state_callback=None) -> int:
             log.warning("Sem link de afiliado, pulando: %s", o.titulo[:60])
             continue
 
-        nova_entrega_whatsapp = False
-        if whatsapp_enabled and whatsapp_group:
-            nova_entrega_whatsapp = db.preparar_entrega_whatsapp(o, whatsapp_group)
+        prepared_destinations = set(db.preparar_entregas_whatsapp(
+            o, [destination for _, destination in whatsapp_destinations]
+        ))
+        new_whatsapp_deliveries = [
+            (label, destination) for label, destination in whatsapp_destinations
+            if destination in prepared_destinations
+        ]
+        if whatsapp_destinations and not new_whatsapp_deliveries:
+            log.info(
+                "WhatsApp: '%s' já possuía uma entrega anterior; nenhum destino novo será publicado isoladamente.",
+                o.titulo[:60],
+            )
 
         try:
             await postar_oferta(bot, o, config.chat_id)
@@ -182,27 +203,36 @@ async def executar_ciclo(bot: Bot, whatsapp=None, state_callback=None) -> int:
             postadas += 1
             log.info("Telegram: oferta publicada — %s", o.titulo[:60])
 
-        if whatsapp_enabled and whatsapp_group and nova_entrega_whatsapp:
+        for destination_index, (destination_label, destination) in enumerate(new_whatsapp_deliveries):
+            if destination_index:
+                retoma = dt.datetime.now() + dt.timedelta(seconds=WHATSAPP_DESTINATION_DELAY_SECONDS)
+                _informar_estado(state_callback, pauseUntil=retoma.isoformat(timespec="seconds"))
+                log.info(
+                    "Pausa de %s antes de publicar a mesma oferta no %s.",
+                    _duracao(WHATSAPP_DESTINATION_DELAY_SECONDS), destination_label,
+                )
+                await asyncio.sleep(WHATSAPP_DESTINATION_DELAY_SECONDS)
+                _informar_estado(state_callback, pauseUntil=None)
             if whatsapp and whatsapp.connected:
                 try:
                     message_id = await whatsapp.send_offer(
-                        whatsapp_group, montar_whatsapp(o), o.imagem,
+                        destination, montar_whatsapp(o), o.imagem,
                         send_image=whatsapp_send_image, title=o.titulo,
                     )
                 except Exception as e:
-                    db.marcar_entrega_whatsapp(o.uid, whatsapp_group, False, str(e))
+                    db.marcar_entrega_whatsapp(o.uid, destination, False, str(e))
                     log.error(
-                        "WhatsApp: não foi possível enviar '%s'. A oferta ficou pendente para tentativa manual: %s",
-                        o.titulo[:60], e,
+                        "WhatsApp: não foi possível enviar '%s' ao %s. A oferta ficou pendente para tentativa manual: %s",
+                        o.titulo[:60], destination_label, e,
                     )
                 else:
-                    db.marcar_entrega_whatsapp(o.uid, whatsapp_group, True, message_id)
+                    db.marcar_entrega_whatsapp(o.uid, destination, True, message_id)
                     enviadas_whatsapp += 1
-                    log.info("WhatsApp: oferta enviada — %s", o.titulo[:60])
+                    log.info("WhatsApp: oferta enviada ao %s — %s", destination_label, o.titulo[:60])
             else:
                 log.warning(
-                    "WhatsApp desconectado: '%s' ficou pendente. O aplicativo não tentará reenviar sozinho.",
-                    o.titulo[:60],
+                    "WhatsApp desconectado: '%s' ficou pendente para o %s. O aplicativo não tentará reenviar sozinho.",
+                    o.titulo[:60], destination_label,
                 )
 
         if index < len(escolhidas) - 1 and config.espacamento_segundos > 0:
@@ -218,7 +248,7 @@ async def executar_ciclo(bot: Bot, whatsapp=None, state_callback=None) -> int:
 
     pendentes = db.total_pendentes_whatsapp() if whatsapp_enabled else 0
     log.info(
-        "Ciclo concluído: %d coletada(s), %d aprovada(s), %d publicada(s) no Telegram e %d enviada(s) ao WhatsApp.",
+        "Ciclo concluído: %d coletada(s), %d aprovada(s), %d publicada(s) no Telegram e %d entrega(s) confirmada(s) no WhatsApp.",
         len(brutas), len(boas), postadas, enviadas_whatsapp,
     )
     if pendentes:

@@ -79,6 +79,29 @@ fn choose_legacy_folder(app: tauri::AppHandle) -> Option<String> {
 }
 
 #[tauri::command]
+fn choose_responder_media(app: tauri::AppHandle) -> Option<String> {
+    app.dialog()
+        .file()
+        .add_filter("Imagens e vídeos", &["jpg", "jpeg", "png", "webp", "mp4"])
+        .blocking_pick_file()
+        .map(|path| path.to_string())
+}
+
+#[tauri::command]
+fn choose_responder_backup(app: tauri::AppHandle) -> Option<String> {
+    app.dialog().file().add_filter("Backup SQLite", &["db"]).blocking_pick_file().map(|path| path.to_string())
+}
+
+#[tauri::command]
+fn save_responder_export(app: tauri::AppHandle, contents: String) -> Result<Option<String>, String> {
+    if contents.len() > 4_000_000 { return Err("Arquivo JSON muito grande.".into()); }
+    let Some(path) = app.dialog().file().add_filter("JSON", &["json"]).blocking_save_file() else { return Ok(None); };
+    std::fs::write(path.as_path().ok_or("Caminho de exportação inválido.")?, contents)
+        .map_err(|error| error.to_string())?;
+    Ok(Some(path.to_string()))
+}
+
+#[tauri::command]
 async fn quit_app(app: tauri::AppHandle) {
     let backend = app.state::<Backend>();
     let _ = backend
@@ -197,6 +220,9 @@ fn main() {
             set_autostart,
             get_app_version,
             choose_legacy_folder,
+            choose_responder_media,
+            choose_responder_backup,
+            save_responder_export,
             quit_app,
             check_for_updates,
             install_update,

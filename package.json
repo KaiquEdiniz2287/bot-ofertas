@@ -1,6 +1,6 @@
 {
   "name": "bot-ofertas",
-  "version": "0.10.4",
+  "version": "0.13.2",
   "private": true,
   "scripts": {
     "start": "npm --prefix desktop start",
@@ -10,6 +10,7 @@
     "whatsapp:build": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-whatsapp.ps1",
     "build": "npm --prefix desktop run build",
     "release": "npm --prefix desktop run release",
+    "release:test": "node --test scripts/build-release.test.mjs",
     "set-version": "npm --prefix desktop run set-version --"
   }
 }

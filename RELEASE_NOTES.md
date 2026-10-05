@@ -1,3 +1,130 @@
+# 0.13.2 — Diagnóstico claro das respostas automáticas
+
+- O Resumo do respondedor agora mostra os pré-requisitos para responder: WhatsApp conectado, post/campanha/grupo ativos, respondedor iniciado e simulação desligada para envio real.
+- O botão distingue claramente **Iniciar simulação** de **Iniciar respostas**; há acesso direto às configurações para desativar a simulação quando desejado.
+- O console informa quantas automações iniciaram e quando novas mensagens de grupos entram para avaliação, sem registrar o conteúdo das conversas.
+- Validado em teste isolado o fluxo de uma mensagem recebida até o transporte compartilhado e o backend Windows empacotado, incluindo texto com acentos e emoji; o envio real ainda depende de teste em grupo.
+- As preferências existentes foram preservadas: nenhuma resposta em massa foi ativada automaticamente.
+
+## Versionamento
+
+Versão: 0.13.1 → 0.13.2
+Tipo: PATCH
+Motivo: melhoria compatível de diagnóstico e operação do respondedor.
+
+---
+
+# 0.13.1 — Respondedor mais simples e modo geral corrigido
+
+- Corrigido o erro ao salvar **Todos os grupos** quando a interface era iniciada com componentes Python/WhatsApp de um build anterior.
+- `npm start` e `npm run dev` agora atualizam os componentes locais quando o código deles muda, evitando versões incompatíveis durante o desenvolvimento.
+- O formulário separa destino, proteção contra excesso e opções avançadas. Campos de regra, atraso e mídia só aparecem quando a opção correspondente está ativa.
+- Valores de opções desativadas não interferem no salvamento; quando falta um post ou campanha ativa, a tela informa exatamente o que fazer e permite salvar um rascunho desativado.
+- Novas automações usam por padrão intervalo de 10 minutos e limite de 10 respostas por grupo ao dia; os limites globais continuam independentes.
+- O modo **Todos os grupos** aplica uma campanha sem cadastrar cada grupo. Conversas privadas e Canais continuam fora, e regras específicas ativas têm prioridade.
+- Os ícones **?** explicam cada configuração ao passar o mouse ou focar pelo teclado.
+
+## Versionamento
+
+Versão: 0.13.0 → 0.13.1
+Tipo: PATCH
+Motivo: correção compatível do empacotamento local e simplificação segura das configurações do respondedor.
+
+---
+
+# 0.13.0 — Respostas automáticas em grupos do WhatsApp
+
+- Nova área independente para cadastrar posts, campanhas, grupos e regras de resposta, usando a conexão WhatsApp já existente.
+- Mensagens novas em grupos habilitados podem acionar respostas prontas citando a mensagem original; mensagens próprias, antigas, duplicadas e eventos de sistema são ignorados.
+- Regras de intervalo, execução, dia, período, quantidade de mensagens, probabilidade, horários e atrasos; reservas e limites persistidos em um banco SQLite próprio.
+- Fila e histórico mostram respostas enviadas, simuladas, ignoradas, canceladas ou com confirmação incerta. O simulador nunca envia mensagens.
+- Por padrão, o respondedor inicia desligado, sem grupos ativos, em modo de simulação e sem inicialização automática.
+- Configuração pode ser exportada/importada em JSON; há backup e restauração do banco com desativação preventiva dos grupos após restaurar.
+- O console ganhou filtros por Ofertas, Respostas e Conexão. Uma queda de conexão cancela respostas aguardando, sem reenviá-las automaticamente.
+- Corrigida a leitura UTF-8 do protocolo no backend empacotado para preservar acentos, pontuação e emojis nos cadastros e nas respostas no Windows.
+- O envio de ofertas conserva prioridade no transporte compartilhado; o fluxo existente do Telegram, marketplaces, grupo e Canal não foi alterado.
+
+## Versionamento
+
+Versão: 0.12.1 → 0.13.0
+Tipo: MINOR
+Motivo: adição compatível de uma nova automação de respostas prontas em grupos.
+
+---
+
+# 0.12.1 — Reconexão preservada após falha de envio
+
+- Corrigida a falha que encerrava o componente do WhatsApp quando a conexão caía antes de terminar um envio, impedindo as tentativas de reconexão automática.
+- O envio e a confirmação do WhatsApp agora são acompanhados simultaneamente, tratando também recusas antecipadas e tempo de confirmação esgotado.
+- O fallback de prévia só repete um envio após recusa explícita e com a conexão ainda ativa; quedas e confirmações incertas deixam a oferta pendente para ação manual.
+- Testes de marketplace sem resultados deixam de informar sucesso indevidamente. O aviso de indisponibilidade da Amazon esclarece que as demais plataformas continuam funcionando.
+- Tratado o falso aviso do ApplicationBuilder do Telegram causado pela comparação de caminhos no executável empacotado, preservando os demais avisos.
+- Incluídos testes de queda durante o envio para grupo e Canal e autoteste de desconexão no componente empacotado.
+
+## Versionamento
+
+Versão: 0.12.0 → 0.12.1
+Tipo: PATCH
+Motivo: correção compatível do tratamento de falhas de envio e da clareza dos diagnósticos.
+
+---
+
+# 0.12.0 — Mais resultados e conexão automática do WhatsApp
+
+- O garimpador manual agora retorna até três dos melhores produtos de cada marketplace ativo.
+- Os resultados são ordenados por relevância, desconto e disponibilidade do link afiliado, sem repetir o mesmo produto.
+- Cada resultado continua trazendo imagem, preço, avaliação, texto formatado e botões individuais para copiar ou abrir a oferta.
+- A pesquisa permanece independente do ciclo automático e pode chegar a doze resultados quando as quatro plataformas responderem.
+- Quando a integração estiver ativa, o aplicativo tenta restaurar a conexão do WhatsApp automaticamente ao abrir.
+- A conexão automática não liga o bot, não publica ofertas e não reenvia pendências.
+- Se a sessão tiver sido removida, o aplicativo exibe o QR Code; se a tentativa falhar, o botão manual continua disponível.
+- O comando `npm run release` agora prepara automaticamente um rascunho da GitHub Release, com tag e título correspondentes à versão atual.
+- A descrição do rascunho é gerada em UTF-8 com as alterações registradas desde a última execução, considerando releases publicadas e rascunhos anteriores.
+- O instalador, a assinatura e o `latest.json` continuam sendo gerados localmente para que sejam anexados e publicados manualmente.
+- O rascunho pode ser preparado antes do commit; o código correspondente precisa ser commitado e enviado somente antes da publicação definitiva.
+
+## Versionamento
+
+Versão: 0.11.1 → 0.12.0
+Tipo: MINOR
+Motivo: ampliação funcional do buscador e conexão automática do WhatsApp na abertura do aplicativo.
+
+---
+
+# 0.11.1 — Entrega sincronizada entre grupo e Canal
+
+- Corrigido o caso em que uma oferta antiga, já registrada no grupo, era publicada somente no Canal recém-ativado.
+- As entregas do WhatsApp agora são preparadas de forma atômica para todos os destinos ativos.
+- Uma oferta nova continua sendo enviada primeiro ao grupo e, após cinco segundos, ao Canal.
+- Ofertas já conhecidas não geram publicações retroativas isoladas em apenas um destino.
+- O envio manual das pendências existentes e as demais integrações permanecem inalterados.
+
+## Versionamento
+
+Versão: 0.11.0 → 0.11.1
+Tipo: PATCH
+Motivo: correção compatível da sincronização das entregas entre grupo e Canal do WhatsApp.
+
+---
+
+# 0.11.0 — Publicação em Canais do WhatsApp
+
+- Adicionado suporte a Canais do WhatsApp nos quais o número conectado seja administrador ou proprietário.
+- Grupo e Canal podem receber a mesma oferta no mesmo ciclo, com texto e prévia idênticos.
+- Quando os dois destinos estão ativos, o Canal aguarda cinco segundos após o envio ao grupo.
+- O Canal pode ser configurado pelo link público ou pelo identificador `@newsletter` e precisa ser validado antes de salvar.
+- Entregas, confirmações e pendências são controladas separadamente para grupo e Canal.
+- Nomes de grupos e Canais passam por normalização Unicode, preservando emojis, acentos e caracteres especiais.
+- O fluxo já existente do grupo, incluindo prévias, confirmação de entrega e reenvio manual, permanece compatível.
+
+## Versionamento
+
+Versão: 0.10.4 → 0.11.0
+Tipo: MINOR
+Motivo: adição compatível de um novo destino de publicação no WhatsApp.
+
+---
+
 # 0.10.4 — Foto principal nas prévias da Amazon
 
 - Corrigida a prévia da Amazon que podia exibir apenas a logomarca da plataforma.

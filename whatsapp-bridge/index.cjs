@@ -9,6 +9,10 @@ const { Boom } = require('@hapi/boom');
 const {
   buildFallbackPreview, buildStandardPreview, isAmazonOffer, previewContent, thumbnailBuffer,
 } = require('./preview.cjs');
+const { channelFromMetadata, normalizeUnicode, parseChannelReference } = require('./channel.cjs');
+const { Incoming } = require('./incoming.cjs');
+const incoming = new Incoming();
+let connectedAt = Date.now();
 const {
   default: makeWASocket,
   Browsers,
@@ -106,29 +110,29 @@ function rejectPendingAcks(message) {
   for (const waiter of [...pendingAcks.values()]) waiter.reject(deliveryError(message, 'DISCONNECTED'));
 }
 
-async function sendWithAck(current, groupJid, content) {
+async function sendWithAck(current, destinationJid, content, options = {}) {
   const messageId = generateMessageIDV2(current.user?.id);
   const ack = createAckWaiter(messageId);
-  let result;
   try {
-    result = await current.sendMessage(groupJid, content, { messageId });
-  } catch (error) {
-    ack.cancel();
-    throw error;
-  }
-  if (result?.status === proto.WebMessageInfo.Status.ERROR) {
-    ack.cancel();
-    throw deliveryError('O WhatsApp recusou a mensagem durante o envio.', 'ACK_ERROR');
-  }
-  if (typeof result?.status === 'number' && result.status >= proto.WebMessageInfo.Status.SERVER_ACK) {
-    pendingAcks.get(messageId)?.resolve(result.status);
-  }
-  try {
-    await ack.promise;
+    // A confirmação pode falhar antes de sendMessage terminar (queda ou timeout).
+    // Observe as duas promessas imediatamente para manter o bridge e a reconexão vivos.
+    const [result] = await Promise.all([
+      (async () => {
+        const sent = await current.sendMessage(destinationJid, content, { ...options, messageId });
+        if (sent?.status === proto.WebMessageInfo.Status.ERROR) {
+          throw deliveryError('O WhatsApp recusou a mensagem durante o envio.', 'ACK_ERROR');
+        }
+        if (typeof sent?.status === 'number' && sent.status >= proto.WebMessageInfo.Status.SERVER_ACK) {
+          pendingAcks.get(messageId)?.resolve(sent.status);
+        }
+        return sent;
+      })(),
+      ack.promise,
+    ]);
+    return result;
   } finally {
     ack.cancel();
   }
-  return result;
 }
 
 async function attachHighQualityPreview(current, preview) {
@@ -169,6 +173,15 @@ async function connect() {
     socket = next;
     next.ev.on('creds.update', saveCreds);
     next.ev.on('messages.update', handleMessageUpdates);
+    next.ev.on('messages.upsert', event => {
+      if (socket !== next || status !== 'CONNECTED') return;
+      try {
+        const messages = incoming.batch(event, String(next.user?.id || '').replace(/:\d+@/, '@'), connectedAt);
+        if (messages.length) emit('event', { event: 'incoming_messages', payload: { messages } });
+      } catch (error) {
+        emit('event', { event: 'error', payload: { message: `Recebimento do respondedor: ${safeError(error)}` } });
+      }
+    });
     next.ws.on('CB:ack,class:message', handleMessageAck);
     next.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
       if (qr) {
@@ -181,6 +194,7 @@ async function connect() {
         }
       }
       if (connection === 'open') {
+        connectedAt = Date.now();
         reconnectAttempts = 0;
         const id = String(next.user?.id || '').split(':')[0];
         setStatus('CONNECTED');
@@ -262,25 +276,36 @@ async function disconnect({ logout = false } = {}) {
 async function listGroups() {
   const groups = await requireConnected().groupFetchAllParticipating();
   return Object.values(groups)
-    .map(group => ({ id: group.id, name: group.subject || 'Grupo sem nome' }))
+    .map(group => ({ id: group.id, name: normalizeUnicode(group.subject, 'Grupo sem nome') }))
     .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
 }
 
-function validateGroup(groupJid) {
-  if (typeof groupJid !== 'string' || !groupJid.endsWith('@g.us')) {
-    throw new Error('Selecione um grupo válido do WhatsApp.');
+async function resolveChannel(reference) {
+  const current = requireConnected();
+  const { type, key } = parseChannelReference(reference);
+  const metadata = await current.newsletterMetadata(type, key);
+  return channelFromMetadata(metadata);
+}
+
+function validateDestination(destinationJid) {
+  if (typeof destinationJid !== 'string'
+    || (!destinationJid.endsWith('@g.us') && !destinationJid.endsWith('@newsletter'))) {
+    throw new Error('Selecione um grupo ou Canal válido do WhatsApp.');
   }
 }
 
 async function sendOffer(command) {
-  validateGroup(command.groupJid);
-  if (typeof command.text !== 'string' || !command.text.trim()) throw new Error('A mensagem da oferta está vazia.');
+  const destinationJid = command.destinationJid || command.groupJid;
+  validateDestination(destinationJid);
+  const text = normalizeUnicode(command.text).trim();
+  if (!text) throw new Error('A mensagem da oferta está vazia.');
+  command = { ...command, text, title: normalizeUnicode(command.title) };
   const current = requireConnected();
   let result;
   let previewMode = '';
   if (command.imageUrl && command.sendImage !== false) {
     // O thumbnail vazio evita depender de bibliotecas nativas de imagem no executável empacotado.
-    result = await sendWithAck(current, command.groupJid, {
+    result = await sendWithAck(current, destinationJid, {
       image: { url: command.imageUrl }, caption: command.text, jpegThumbnail: Buffer.alloc(0),
     });
   } else {
@@ -297,16 +322,48 @@ async function sendOffer(command) {
     preview = await attachHighQualityPreview(current, preview);
     previewMode = preview.mode;
     try {
-      result = await sendWithAck(current, command.groupJid, preview.content);
+      result = await sendWithAck(current, destinationJid, preview.content);
     } catch (error) {
-      if (preview.mode !== 'link' || error.code === 'ACK_TIMEOUT') throw error;
+      // Reenvio só após recusa explícita: queda/timeout deixam a entrega incerta.
+      if (preview.mode !== 'link' || error.code !== 'ACK_ERROR'
+        || socket !== current || status !== 'CONNECTED') throw error;
       preview = await buildFallbackPreview(command);
       preview = await attachHighQualityPreview(current, preview);
       previewMode = preview.mode;
-      result = await sendWithAck(current, command.groupJid, preview.content);
+      result = await sendWithAck(current, destinationJid, preview.content);
     }
   }
   return { messageId: result?.key?.id || '', previewMode };
+}
+
+async function sendReply(command) {
+  const current = requireConnected();
+  const account = String(current.user?.id || '').replace(/:\d+@/, '@');
+  let quoted;
+  try { quoted = incoming.quoted(command.cacheId, command.groupJid, account); }
+  catch (error) { throw deliveryError(safeError(error), 'CONTEXT_MISSING'); }
+  // Confere acesso atual, não apenas um cadastro antigo da interface.
+  try { await current.groupMetadata(command.groupJid); }
+  catch { throw deliveryError('Não foi possível verificar o acesso atual ao grupo.', 'GROUP_UNAVAILABLE'); }
+  const post = command.post || {};
+  let content;
+  if (['TEXT', 'LINK'].includes(post.type)) {
+    if (typeof post.content !== 'string' || !post.content.trim() || post.content.length > 4096) throw new Error('Texto inválido.');
+    content = { text: post.content };
+  } else if (['IMAGE', 'VIDEO'].includes(post.type)) {
+    let root, file;
+    try {
+      root = fs.realpathSync(process.env.BOT_OFERTAS_RESPONDER_MEDIA);
+      file = fs.realpathSync(post.mediaPath);
+    } catch { throw deliveryError('Arquivo de mídia não encontrado.', 'MEDIA_INVALID'); }
+    if (path.dirname(file) !== root || !['.jpg', '.jpeg', '.png', '.webp', '.mp4'].includes(path.extname(file).toLowerCase())
+        || fs.statSync(file).size > 64 * 1024 * 1024) throw deliveryError('Mídia não autorizada.', 'MEDIA_INVALID');
+    content = { [post.type === 'VIDEO' ? 'video' : 'image']: { url: file }, caption: String(post.caption || '').slice(0, 4096) };
+  } else throw new Error('Tipo de resposta inválido.');
+  try { incoming.quoted(command.cacheId, command.groupJid, account); }
+  catch (error) { throw deliveryError(safeError(error), 'CONTEXT_MISSING'); }
+  const result = await sendWithAck(current, command.groupJid, content, { quoted });
+  return { messageId: result?.key?.id || '' };
 }
 
 async function handle(command) {
@@ -314,11 +371,15 @@ async function handle(command) {
     case 'connect': return connect();
     case 'get_status': return { status, reconnectAttempts, maxReconnectAttempts: MAX_RECONNECT_ATTEMPTS };
     case 'list_groups': return { groups: await listGroups() };
+    case 'resolve_channel': return resolveChannel(command.reference);
     case 'send_offer': return sendOffer(command);
+    case 'configure_responses': incoming.configure(command.groups, command.since); return { configured: true };
+    case 'send_reply': return sendReply(command);
     case 'send_test': {
-      validateGroup(command.groupJid);
+      const destinationJid = command.destinationJid || command.groupJid;
+      validateDestination(destinationJid);
       const result = await sendWithAck(
-        requireConnected(), command.groupJid,
+        requireConnected(), destinationJid,
         { text: '✅ Teste do Bot de Ofertas concluído com sucesso.' },
       );
       return { messageId: result?.key?.id || '' };
@@ -357,9 +418,23 @@ if (process.argv.includes('--self-test')) {
       } catch (error) {
         rejectedAckOk = error.code === 'ACK_ERROR';
       }
+      let disconnectedAckOk = false;
+      try {
+        await sendWithAck({
+          sendMessage: async () => {
+            rejectPendingAcks('Queda simulada durante o autoteste.');
+            await new Promise(resolve => setTimeout(resolve, 10));
+            return { key: { id: 'SELF_TEST_DISCONNECT' } };
+          },
+        }, 'self-test@g.us', { text: 'Autoteste local, sem envio externo.' });
+      } catch (error) {
+        disconnectedAckOk = error.code === 'DISCONNECTED' && pendingAcks.size === 0;
+      }
+      // Mantém o processo vivo até o envio simulado terminar, detectando rejeições tardias.
+      await new Promise(resolve => setTimeout(resolve, 20));
       emit('self_test', {
         ok: dataUrl.startsWith('data:image/png;base64,') && reconnectOk
-          && rejectedAckOk
+          && rejectedAckOk && disconnectedAckOk
           && Buffer.isBuffer(preview.linkPreview.jpegThumbnail)
           && preview.linkPreview['canonical-url'] === 'https://loja.test/p',
       });
@@ -377,9 +452,9 @@ if (process.argv.includes('--self-test')) {
       const result = await handle(command);
       emit('response', { id: command.id, ok: true, result });
     } catch (error) {
-      emit('response', { id: command?.id, ok: false, error: safeError(error) });
+      emit('response', { id: command?.id, ok: false, error: safeError(error), code: error?.code || '' });
     }
-  });
+  }).on('close', shutdown);
 
   process.on('SIGTERM', shutdown);
   process.on('SIGINT', shutdown);

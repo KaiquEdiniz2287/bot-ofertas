@@ -22,6 +22,58 @@ class RunningRuntime:
 
 
 class DesktopServiceTests(unittest.IsolatedAsyncioTestCase):
+    async def test_fonte_sem_ofertas_nao_informa_sucesso(self):
+        emitter = CaptureEmitter()
+        service = DesktopService(emitter, RunningRuntime())
+        with patch("ofertas.desktop_service.reload_config"), patch(
+            "ofertas.sources.amazon.buscar_ofertas", return_value=[],
+        ):
+            response = await service.handle({"id": "teste", "command": "test_source", "payload": {"source": "amazon"}})
+        self.assertFalse(response["ok"])
+        self.assertIn("nenhuma oferta", response["error"])
+        self.assertFalse(any("concluída com sucesso" in event.get("message", "") for event in emitter.events))
+        self.assertFalse(service._action_lock.locked())
+
+    async def test_fonte_com_ofertas_continua_com_sucesso(self):
+        from ofertas.models import Oferta
+        emitter = CaptureEmitter()
+        service = DesktopService(emitter, RunningRuntime())
+        offer = Oferta(plataforma="amazon", id_produto="teste", titulo="Café ☕", url_produto="https://loja.test/p", url_afiliado="https://loja.test/a")
+        with patch("ofertas.desktop_service.reload_config"), patch(
+            "ofertas.sources.amazon.buscar_ofertas", return_value=[offer],
+        ):
+            result = await service._test_source({"source": "amazon"})
+        self.assertEqual(result["offers"][0]["titulo"], "Café ☕")
+        self.assertTrue(any("concluída com sucesso" in event.get("message", "") for event in emitter.events))
+
+    async def test_conecta_whatsapp_automaticamente_quando_esta_ativo(self):
+        emitter = CaptureEmitter()
+        service = DesktopService(emitter, RunningRuntime())
+        service.whatsapp.connect = AsyncMock(return_value={"status": "CONNECTING"})
+
+        with patch(
+            "ofertas.desktop_service.read_settings",
+            return_value={"preferences": {"whatsappEnabled": True}},
+        ):
+            connected = await service._connect_whatsapp_on_start()
+
+        self.assertTrue(connected)
+        service.whatsapp.connect.assert_awaited_once()
+        self.assertTrue(any("automaticamente" in event.get("message", "") for event in emitter.events))
+
+    async def test_nao_conecta_whatsapp_automaticamente_quando_esta_desativado(self):
+        service = DesktopService(CaptureEmitter(), RunningRuntime())
+        service.whatsapp.connect = AsyncMock()
+
+        with patch(
+            "ofertas.desktop_service.read_settings",
+            return_value={"preferences": {"whatsappEnabled": False}},
+        ):
+            connected = await service._connect_whatsapp_on_start()
+
+        self.assertFalse(connected)
+        service.whatsapp.connect.assert_not_awaited()
+
     async def test_configuracoes_incluem_catalogo_de_categorias(self):
         service = DesktopService(CaptureEmitter(), RunningRuntime())
         with patch("ofertas.desktop_service.read_settings", return_value={"nichos": []}):
@@ -89,6 +141,19 @@ class DesktopServiceTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result, response)
         self.assertTrue(any("concluída" in event.get("message", "") for event in emitter.events))
+
+    async def test_valida_canal_do_whatsapp_com_nome_unicode(self):
+        emitter = CaptureEmitter()
+        service = DesktopService(emitter, RunningRuntime())
+        service.whatsapp.status = "CONNECTED"
+        service.whatsapp.resolve_channel = AsyncMock(return_value={
+            "id": "120363123@newsletter", "name": "Família 🛒 & Ação", "role": "ADMIN",
+        })
+
+        result = await service._whatsapp_channel({"reference": "https://whatsapp.com/channel/teste123456"})
+
+        self.assertEqual(result["name"], "Família 🛒 & Ação")
+        self.assertTrue(any("Família 🛒 & Ação" in event.get("message", "") for event in emitter.events))
 
 
 if __name__ == "__main__":

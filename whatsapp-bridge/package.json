@@ -6,7 +6,7 @@
   "main": "index.cjs",
   "scripts": {
     "start": "node index.cjs",
-    "test": "node --test test/*.test.cjs",
+    "test": "node --test --test-concurrency=1 test/*.test.cjs",
     "build": "pkg index.cjs --target node22-win-x64 --output ../dist/bot-ofertas-whatsapp.exe"
   },
   "dependencies": {
@@ -22,7 +22,8 @@
   },
   "pkg": {
     "scripts": [
-      "index.cjs"
+      "index.cjs",
+      "incoming.cjs"
     ]
   }
 }

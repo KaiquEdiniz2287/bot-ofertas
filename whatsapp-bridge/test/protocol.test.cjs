@@ -33,8 +33,11 @@ test('responde status sem iniciar conexão externa', async t => {
   const response = waitFor(message => message.id === '1');
   child.stdin.write(`${JSON.stringify({ id: '1', action: 'get_status' })}\n`);
   await response;
-  child.kill();
-  await once(child, 'exit');
+  child.stdin.end();
+  const timeout = setTimeout(() => child.kill(), 5000);
+  const [exitCode] = await once(child, 'exit');
+  clearTimeout(timeout);
+  assert.equal(exitCode, 0, 'a ponte deve encerrar quando o backend fecha a entrada');
   assert.equal(received[0].type, 'bridge_ready');
   assert.deepEqual(received.find(item => item.id === '1'), {
     type: 'response', id: '1', ok: true,
