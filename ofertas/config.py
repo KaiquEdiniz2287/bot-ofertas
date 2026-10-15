@@ -54,8 +54,12 @@ class Config:
 
         # config.yaml
         self.intervalo_minutos: int = int(geral.get("intervalo_minutos", 45))
+        self.intervalo_ciclo_min_minutos: int = int(geral.get("intervalo_ciclo_min_minutos", 40))
+        self.intervalo_ciclo_max_minutos: int = int(geral.get("intervalo_ciclo_max_minutos", 60))
         self.max_posts_por_ciclo: int = int(geral.get("max_posts_por_ciclo", 3))
         self.espacamento_segundos: int = int(geral.get("espacamento_segundos", 120))
+        self.espacamento_min_segundos: int = int(geral.get("espacamento_min_segundos", 120))
+        self.espacamento_max_segundos: int = int(geral.get("espacamento_max_segundos", 300))
         self.nao_repetir_dias: int = int(geral.get("nao_repetir_dias", 7))
         self.horario_ativo: str = str(geral.get("horario_ativo") or "").strip()  # "08:00-23:00"; vazio = 24h
 

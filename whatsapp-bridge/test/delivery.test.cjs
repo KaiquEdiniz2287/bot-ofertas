@@ -15,22 +15,32 @@ function harness(t, { ackTimeout = 1000 } = {}) {
   const timers = new Set();
   let nextId = 0;
   let fallbackCalls = 0;
+  let networkAvailable = true;
+  const previewCalls = [];
+  const mediaOptions = [];
   const Status = { ERROR: 0, SERVER_ACK: 2 };
   const preview = () => ({ mode: 'link', content: { text: 'Oferta', linkPreview: {} }, image: {} });
   const modules = {
     'node:fs': { mkdirSync() {} },
+    'node:dns': { promises: { lookup: async () => {
+      if (!networkAvailable) throw new Error('getaddrinfo ENOTFOUND web.whatsapp.com');
+      return { address: '127.0.0.1' };
+    } } },
     'node:path': path,
     'node:readline': { createInterface: () => new EventEmitter() },
     qrcode: {},
     pino: () => ({}),
     '@hapi/boom': { Boom: class {} },
     './preview.cjs': {
-      buildStandardPreview: async () => preview(),
-      buildFallbackPreview: async () => { fallbackCalls++; return { ...preview(), mode: 'fallback' }; },
+      buildStandardPreview: async (_command, options) => { previewCalls.push(options); return preview(); },
+      buildFallbackPreview: async (_command, options) => {
+        fallbackCalls++;
+        previewCalls.push(options);
+        return { ...preview(), mode: 'fallback' };
+      },
       isAmazonOffer: () => false,
     },
     './channel.cjs': { normalizeUnicode: value => String(value || '') },
-    './incoming.cjs': require('../incoming.cjs'),
     '@whiskeysockets/baileys': {
       default: () => {
         const socket = { ev: new EventEmitter(), ws: new EventEmitter(), user: { id: 'teste' } };
@@ -41,18 +51,21 @@ function harness(t, { ackTimeout = 1000 } = {}) {
       DisconnectReason: { loggedOut: 401, restartRequired: 515 },
       generateMessageIDV2: () => `TEST_${++nextId}`,
       proto: { WebMessageInfo: { Status } },
-      prepareWAMessageMedia: async () => ({ imageMessage: {} }),
+      prepareWAMessageMedia: async (_media, options) => {
+        mediaOptions.push(options);
+        return { imageMessage: {} };
+      },
       useMultiFileAuthState: async () => ({ state: {}, saveCreds() {} }),
     },
   };
   const context = vm.createContext({
     require: name => { assert.ok(name in modules, name); return modules[name]; },
     console: {}, Buffer,
-    process: { env: {}, argv: [], cwd: () => '.', on() {}, stdout: {
+    process: { env: {}, argv: [], cwd: () => '.', on() {}, stderr: { write() {} }, stdout: {
       write: line => events.push(JSON.parse(line)),
     } },
     setTimeout: (callback, ms) => {
-      const timer = setTimeout(callback, ms === 15000 ? ackTimeout : ms === 2000 ? 10 : ms);
+      const timer = setTimeout(callback, ms === 15000 ? ackTimeout : ms === 2000 || ms === 30000 ? 10 : ms);
       timers.add(timer);
       return timer;
     },
@@ -60,34 +73,89 @@ function harness(t, { ackTimeout = 1000 } = {}) {
   });
   t.after(() => { for (const timer of timers) clearTimeout(timer); });
   vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'index.cjs'), 'utf8'), context);
-  const api = vm.runInContext('({ connect, sendWithAck, sendOffer, handle, incoming, handleMessageAck, handleMessageUpdates, rejectPendingAcks, pendingAcks })', context);
-  return { ...api, events, sockets, Status, get fallbackCalls() { return fallbackCalls; } };
+  const api = vm.runInContext('({ connect, sendWithAck, sendOffer, handle, handleMessageAck, handleMessageUpdates, rejectPendingAcks, pendingAcks })', context);
+  return { ...api, events, sockets, Status, previewCalls, mediaOptions,
+    setNetworkAvailable(value) { networkAvailable = value; },
+    get fallbackCalls() { return fallbackCalls; } };
 }
 
-test('resposta usa o mesmo socket, cita a mensagem original e aguarda ACK', async t => {
+test('falha de DNS aguarda a rede sem esgotar tentativas e reconecta ao voltar', async t => {
+  const bridge = harness(t);
+  await bridge.connect();
+  bridge.sockets[0].ev.emit('connection.update', { connection: 'open' });
+  bridge.setNetworkAvailable(false);
+  bridge.sockets[0].ev.emit('connection.update', {
+    connection: 'close',
+    lastDisconnect: { error: { message: 'WebSocket Error (getaddrinfo ENOTFOUND web.whatsapp.com)',
+      output: { statusCode: 408 } } },
+  });
+  await delay(35);
+  assert.equal(bridge.sockets.length, 1);
+  assert.ok(bridge.events.some(event => event.payload?.networkUnavailable === true));
+  assert.equal((await bridge.handle({ action: 'get_status' })).reconnectAttempts, 0);
+  bridge.setNetworkAvailable(true);
+  await delay(35);
+  assert.equal(bridge.sockets.length, 2);
+  bridge.sockets[1].ev.emit('connection.update', { connection: 'open' });
+  assert.equal(bridge.events.at(-2).payload.status, 'CONNECTED');
+});
+
+test('encerrar durante falha de rede cancela a reconexão e sessão removida exige ação manual', async t => {
+  const bridge = harness(t);
+  await bridge.connect();
+  bridge.sockets[0].ev.emit('connection.update', { connection: 'open' });
+  bridge.setNetworkAvailable(false);
+  bridge.sockets[0].ev.emit('connection.update', {
+    connection: 'close', lastDisconnect: { error: { message: 'getaddrinfo ENOTFOUND web.whatsapp.com',
+      output: { statusCode: 408 } } },
+  });
+  await bridge.handle({ action: 'shutdown' });
+  bridge.setNetworkAvailable(true);
+  await delay(25);
+  assert.equal(bridge.sockets.length, 1);
+  assert.equal(bridge.events.at(-1).payload.status, 'DISCONNECTED');
+
+  await bridge.connect();
+  bridge.sockets[1].ev.emit('connection.update', {
+    connection: 'close', lastDisconnect: { error: { message: 'logged out', output: { statusCode: 401 } } },
+  });
+  await delay(25);
+  assert.equal(bridge.sockets.length, 2);
+  assert.equal(bridge.events.at(-1).payload.status, 'LOGGED_OUT');
+});
+
+test('só o Canal recebe a miniatura ampliada; grupo e foto completa permanecem iguais', async t => {
   const bridge = harness(t);
   await bridge.connect();
   const socket = bridge.sockets[0];
   socket.ev.emit('connection.update', { connection: 'open' });
-  socket.groupMetadata = async jid => ({ id: jid });
-  let sent;
-  socket.sendMessage = async (...args) => {
-    sent = args;
-    setImmediate(() => socket.ev.emit('messages.update', [{ key: { id: args[2].messageId }, update: { status: bridge.Status.SERVER_ACK } }]));
-    return { key: { id: args[2].messageId } };
+  socket.sendMessage = async (_jid, _content, { messageId }) => ({ key: { id: messageId }, status: 2 });
+
+  await bridge.sendOffer({ destinationJid: 'teste@g.us', text: 'Oferta', sendImage: false });
+  await bridge.sendOffer({ destinationJid: 'teste@newsletter', text: 'Oferta', sendImage: false });
+  await bridge.sendOffer({ destinationJid: 'teste@newsletter', text: 'Oferta', imageUrl: 'https://loja.test/foto.jpg' });
+
+  assert.equal(bridge.previewCalls.length, 2);
+  assert.equal(bridge.previewCalls[0].channel, false);
+  assert.equal(bridge.previewCalls[1].channel, true);
+  assert.equal(bridge.mediaOptions[0].jid, undefined);
+  assert.equal(bridge.mediaOptions.length, 1);
+});
+
+test('Canal mantém o cartão com JPEG incorporado e não anexa mídia HD preta no celular', async t => {
+  const bridge = harness(t);
+  await bridge.connect();
+  const socket = bridge.sockets[0];
+  socket.ev.emit('connection.update', { connection: 'open' });
+  const contents = [];
+  socket.sendMessage = async (_jid, content, { messageId }) => {
+    contents.push(content);
+    return { key: { id: messageId }, status: 2 };
   };
-  bridge.incoming.configure(['123@g.us'], Date.now() / 1000 - 1);
-  const message = { key: { id: 'original', remoteJid: '123@g.us', participant: 'pessoa@s.whatsapp.net', fromMe: false }, messageTimestamp: Math.ceil(Date.now()/1000), message: { conversation: 'Olá 🎉' } };
-  socket.ev.emit('messages.upsert', { type: 'notify', messages: [message] });
-  const incomingEvent = bridge.events.find(event => event.event === 'incoming_messages');
-  assert.ok(incomingEvent);
-  const received = incomingEvent.payload.messages[0];
-  await bridge.handle({ action: 'send_reply', groupJid: '123@g.us', cacheId: received.cacheId, post: { type: 'TEXT', content: 'Resposta pronta' } });
-  assert.equal(sent[0], '123@g.us');
-  assert.equal(sent[1].text, 'Resposta pronta');
-  assert.equal(sent[2].quoted, message);
-  bridge.incoming.configure([], Date.now()/1000);
-  await assert.rejects(bridge.handle({ action: 'send_reply', groupJid: '123@g.us', cacheId: received.cacheId, post: { type: 'TEXT', content: 'Falha' } }), { code: 'CONTEXT_MISSING' });
+  await bridge.sendOffer({ destinationJid: 'teste@newsletter', text: 'Oferta', sendImage: false });
+  assert.equal(bridge.mediaOptions.length, 0);
+  assert.equal(contents.length, 1);
+  assert.equal(contents[0].linkPreview.highQualityThumbnail, undefined);
 });
 
 for (const destination of ['teste@g.us', 'teste@newsletter']) {
@@ -112,6 +180,13 @@ for (const destination of ['teste@g.us', 'teste@newsletter']) {
     assert.equal(bridge.events.at(-2).payload.status, 'CONNECTED');
   });
 }
+
+test('recusa comandos de resposta automática e mantém o envio de ofertas', async t => {
+  const bridge = harness(t);
+  await assert.rejects(bridge.handle({ action: 'send_reply' }), /não permitido/);
+  await assert.rejects(bridge.handle({ action: 'configure_responses' }), /não permitido/);
+  assert.equal(typeof bridge.sendOffer, 'function');
+});
 
 test('timeout durante sendMessage lento não gera rejeição não tratada', async t => {
   const bridge = harness(t, { ackTimeout: 10 });

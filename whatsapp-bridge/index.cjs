@@ -1,6 +1,7 @@
 'use strict';
 
 const fs = require('node:fs');
+const dns = require('node:dns').promises;
 const path = require('node:path');
 const readline = require('node:readline');
 const QRCode = require('qrcode');
@@ -10,9 +11,6 @@ const {
   buildFallbackPreview, buildStandardPreview, isAmazonOffer, previewContent, thumbnailBuffer,
 } = require('./preview.cjs');
 const { channelFromMetadata, normalizeUnicode, parseChannelReference } = require('./channel.cjs');
-const { Incoming } = require('./incoming.cjs');
-const incoming = new Incoming();
-let connectedAt = Date.now();
 const {
   default: makeWASocket,
   Browsers,
@@ -38,8 +36,10 @@ let closing = false;
 let status = 'DISCONNECTED';
 let reconnectAttempts = 0;
 let reconnectTimer;
+let waitingForNetwork = false;
 const MAX_RECONNECT_ATTEMPTS = 5;
 const RECONNECT_DELAYS_MS = [2000, 5000, 10000, 20000, 30000];
+const NETWORK_RECHECK_MS = 30000;
 const pendingAcks = new Map();
 
 function emit(type, payload = {}) {
@@ -135,17 +135,22 @@ async function sendWithAck(current, destinationJid, content, options = {}) {
   }
 }
 
-async function attachHighQualityPreview(current, preview) {
-  const { imageMessage } = await prepareWAMessageMedia({
+async function attachHighQualityPreview(current, preview, destinationJid) {
+  // A mídia HD do cartão funciona no desktop, mas aparece preta no WhatsApp móvel
+  // quando o destino é um Canal. O JPEG incorporado é a opção compatível.
+  if (destinationJid.endsWith('@newsletter')) return preview;
+  const media = {
     image: preview.image.uploadBuffer,
     jpegThumbnail: preview.image.thumbnail,
     width: preview.image.width,
     height: preview.image.height,
-  }, {
+  };
+  const options = {
     upload: current.waUploadToServer,
     mediaTypeOverride: 'thumbnail-link',
     logger,
-  });
+  };
+  const { imageMessage } = await prepareWAMessageMedia(media, options);
   preview.content.linkPreview.highQualityThumbnail = imageMessage;
   return preview;
 }
@@ -157,6 +162,7 @@ async function connect() {
     clearTimeout(reconnectTimer);
     reconnectTimer = undefined;
   }
+  waitingForNetwork = false;
   closing = false;
   fs.mkdirSync(authDirectory, { recursive: true });
   connecting = (async () => {
@@ -173,15 +179,6 @@ async function connect() {
     socket = next;
     next.ev.on('creds.update', saveCreds);
     next.ev.on('messages.update', handleMessageUpdates);
-    next.ev.on('messages.upsert', event => {
-      if (socket !== next || status !== 'CONNECTED') return;
-      try {
-        const messages = incoming.batch(event, String(next.user?.id || '').replace(/:\d+@/, '@'), connectedAt);
-        if (messages.length) emit('event', { event: 'incoming_messages', payload: { messages } });
-      } catch (error) {
-        emit('event', { event: 'error', payload: { message: `Recebimento do respondedor: ${safeError(error)}` } });
-      }
-    });
     next.ws.on('CB:ack,class:message', handleMessageAck);
     next.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
       if (qr) {
@@ -194,7 +191,6 @@ async function connect() {
         }
       }
       if (connection === 'open') {
-        connectedAt = Date.now();
         reconnectAttempts = 0;
         const id = String(next.user?.id || '').split(':')[0];
         setStatus('CONNECTED');
@@ -223,6 +219,8 @@ async function connect() {
 
 function scheduleReconnect(reason, error) {
   if (closing || reconnectTimer) return;
+  if (isNetworkUnavailable(error)) return waitForNetwork(reason, error);
+  waitingForNetwork = false;
   const plan = reconnectPlan(reconnectAttempts, reason);
   if (!plan) {
     setStatus(
@@ -246,6 +244,35 @@ function scheduleReconnect(reason, error) {
   }, delay);
 }
 
+function isNetworkUnavailable(error) {
+  return /\b(?:ENOTFOUND|EAI_AGAIN|EAI_FAIL|ENETUNREACH|EHOSTUNREACH|ENETDOWN)\b|getaddrinfo failed/i.test(error);
+}
+
+function waitForNetwork(reason, error) {
+  if (closing || reconnectTimer) return;
+  const retryAt = new Date(Date.now() + NETWORK_RECHECK_MS).toISOString();
+  const detail = waitingForNetwork ? ''
+    : `Rede ou DNS indisponível (${error}). Nova verificação em 30 segundos; isso não consome as ${MAX_RECONNECT_ATTEMPTS} tentativas.`;
+  waitingForNetwork = true;
+  setStatus(
+    'RECONNECTING',
+    detail,
+    { reason, attempt: reconnectAttempts, maxAttempts: MAX_RECONNECT_ATTEMPTS, retryAt, networkUnavailable: true },
+  );
+  reconnectTimer = setTimeout(async () => {
+    reconnectTimer = undefined;
+    if (closing || status !== 'RECONNECTING') return;
+    try {
+      await dns.lookup('web.whatsapp.com');
+    } catch (lookupError) {
+      waitForNetwork(reason, safeError(lookupError));
+      return;
+    }
+    if (closing || status !== 'RECONNECTING') return;
+    connect().catch(nextError => scheduleReconnect(reason, safeError(nextError)));
+  }, NETWORK_RECHECK_MS);
+}
+
 function reconnectPlan(attempts, reason) {
   if (attempts >= MAX_RECONNECT_ATTEMPTS) return null;
   return {
@@ -261,6 +288,7 @@ async function disconnect({ logout = false } = {}) {
     reconnectTimer = undefined;
   }
   reconnectAttempts = 0;
+  waitingForNetwork = false;
   rejectPendingAcks('A conexão foi encerrada antes de o WhatsApp confirmar a mensagem.');
   const current = socket;
   socket = undefined;
@@ -310,16 +338,17 @@ async function sendOffer(command) {
     });
   } else {
     let preview;
+    const previewOptions = { channel: destinationJid.endsWith('@newsletter') };
     if (isAmazonOffer(command)) {
-      preview = await buildFallbackPreview(command);
+      preview = await buildFallbackPreview(command, previewOptions);
     } else {
       try {
-        preview = await buildStandardPreview(command);
+        preview = await buildStandardPreview(command, previewOptions);
       } catch {
-        preview = await buildFallbackPreview(command);
+        preview = await buildFallbackPreview(command, previewOptions);
       }
     }
-    preview = await attachHighQualityPreview(current, preview);
+    preview = await attachHighQualityPreview(current, preview, destinationJid);
     previewMode = preview.mode;
     try {
       result = await sendWithAck(current, destinationJid, preview.content);
@@ -327,43 +356,13 @@ async function sendOffer(command) {
       // Reenvio só após recusa explícita: queda/timeout deixam a entrega incerta.
       if (preview.mode !== 'link' || error.code !== 'ACK_ERROR'
         || socket !== current || status !== 'CONNECTED') throw error;
-      preview = await buildFallbackPreview(command);
-      preview = await attachHighQualityPreview(current, preview);
+      preview = await buildFallbackPreview(command, previewOptions);
+      preview = await attachHighQualityPreview(current, preview, destinationJid);
       previewMode = preview.mode;
       result = await sendWithAck(current, destinationJid, preview.content);
     }
   }
   return { messageId: result?.key?.id || '', previewMode };
-}
-
-async function sendReply(command) {
-  const current = requireConnected();
-  const account = String(current.user?.id || '').replace(/:\d+@/, '@');
-  let quoted;
-  try { quoted = incoming.quoted(command.cacheId, command.groupJid, account); }
-  catch (error) { throw deliveryError(safeError(error), 'CONTEXT_MISSING'); }
-  // Confere acesso atual, não apenas um cadastro antigo da interface.
-  try { await current.groupMetadata(command.groupJid); }
-  catch { throw deliveryError('Não foi possível verificar o acesso atual ao grupo.', 'GROUP_UNAVAILABLE'); }
-  const post = command.post || {};
-  let content;
-  if (['TEXT', 'LINK'].includes(post.type)) {
-    if (typeof post.content !== 'string' || !post.content.trim() || post.content.length > 4096) throw new Error('Texto inválido.');
-    content = { text: post.content };
-  } else if (['IMAGE', 'VIDEO'].includes(post.type)) {
-    let root, file;
-    try {
-      root = fs.realpathSync(process.env.BOT_OFERTAS_RESPONDER_MEDIA);
-      file = fs.realpathSync(post.mediaPath);
-    } catch { throw deliveryError('Arquivo de mídia não encontrado.', 'MEDIA_INVALID'); }
-    if (path.dirname(file) !== root || !['.jpg', '.jpeg', '.png', '.webp', '.mp4'].includes(path.extname(file).toLowerCase())
-        || fs.statSync(file).size > 64 * 1024 * 1024) throw deliveryError('Mídia não autorizada.', 'MEDIA_INVALID');
-    content = { [post.type === 'VIDEO' ? 'video' : 'image']: { url: file }, caption: String(post.caption || '').slice(0, 4096) };
-  } else throw new Error('Tipo de resposta inválido.');
-  try { incoming.quoted(command.cacheId, command.groupJid, account); }
-  catch (error) { throw deliveryError(safeError(error), 'CONTEXT_MISSING'); }
-  const result = await sendWithAck(current, command.groupJid, content, { quoted });
-  return { messageId: result?.key?.id || '' };
 }
 
 async function handle(command) {
@@ -373,8 +372,6 @@ async function handle(command) {
     case 'list_groups': return { groups: await listGroups() };
     case 'resolve_channel': return resolveChannel(command.reference);
     case 'send_offer': return sendOffer(command);
-    case 'configure_responses': incoming.configure(command.groups, command.since); return { configured: true };
-    case 'send_reply': return sendReply(command);
     case 'send_test': {
       const destinationJid = command.destinationJid || command.groupJid;
       validateDestination(destinationJid);

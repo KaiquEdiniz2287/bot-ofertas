@@ -46,27 +46,13 @@ Instale pelo arquivo `Bot de Ofertas_<versão>_x64-setup.exe`. O aplicativo abre
 - O WhatsApp começa desativado. Para ativar, abra **Configurações → WhatsApp**, conecte pelo QR Code e escolha um grupo, um Canal ou os dois.
 - Depois de ativado, o aplicativo tenta restaurar a conexão do WhatsApp automaticamente sempre que é aberto. Isso não liga o bot nem reenvia pendências.
 - Para usar um Canal, cole seu link público ou ID `@newsletter`, clique em **Validar Canal** e confirme que o número conectado é administrador ou proprietário.
-- Grupo e Canal recebem o mesmo texto e a mesma prévia. Quando ambos estão ativos, o aplicativo aguarda cinco segundos entre os envios.
+- Grupo e Canal recebem o mesmo texto e a mesma oferta. Com a foto completa desligada, o grupo usa a prévia expandida e o Canal usa um cartão compacto com a foto incorporada, compatível com o WhatsApp móvel. Quando ambos estão ativos, o aplicativo aguarda cinco segundos entre os envios.
 - Se um envio ao WhatsApp falhar, ele fica visível na área **WhatsApp** por até seis horas. O aplicativo não reenvia sozinho; use **Enviar agora** quando quiser, em no máximo cinco tentativas manuais.
 - Se a conexão do WhatsApp cair, o aplicativo tenta recuperá-la até cinco vezes. Sessão removida ou cinco falhas consecutivas devolvem o controle ao botão manual.
 - Falhas conhecidas de descriptografia de mensagens recebidas são resumidas no console sem ocultar erros operacionais nem interferir nos envios.
 - A sessão do WhatsApp fica somente em `%LOCALAPPDATA%\br.com.kaiodiniz.botofertas\data\whatsapp-session` e não entra no instalador.
 - A aba **Buscar produtos** consulta as plataformas ativas sem pausar o bot. Ela mostra até três dos melhores resultados afiliados de cada marketplace e copia o texto completo já formatado, sem publicar nem registrar a pesquisa no histórico.
-
-### Respostas automáticas em grupos
-
-A área **Respostas automáticas** usa a mesma sessão do WhatsApp e tem controles próprios. Começa desligada, com simulação ligada, grupos desativados e início automático desativado. Parar o respondedor não para o bot de ofertas; desconectar o WhatsApp interrompe os dois envios WhatsApp.
-
-1. Conecte o WhatsApp na área compartilhada. Cadastre um post de texto/link ou escolha uma imagem/vídeo local para copiar à pasta do aplicativo.
-2. Monte uma campanha com os posts desejados. Em **Grupos e regras**, escolha um grupo específico ou **Todos os grupos**, associe a campanha e ajuste o intervalo mínimo e o limite diário. Horários e atraso ficam em **Horários e atraso opcional**. A opção geral reconhece automaticamente novos grupos; conversas privadas e Canais não entram. Um grupo específico ativo usa sua própria regra no lugar da geral.
-3. Faça uma simulação na aba **Simulador** e acompanhe a fila/histórico. Ative o grupo e inicie o respondedor ainda com **Simulação** ligada para observar mensagens reais sem publicar.
-4. Quando estiver satisfeito, desative **Simulação** nas configurações do respondedor e confirme no Resumo que o WhatsApp está conectado e o respondedor iniciado. **Iniciar automaticamente** é opcional e só age na próxima conexão; ativá-lo não inicia a sessão atual. Apenas mensagens novas nos grupos habilitados poderão gerar respostas. O envio cita a mensagem recebida; cada mensagem é deduplicada.
-
-O atraso e os limites são independentes do ciclo de ofertas. Ofertas prontas têm prioridade no transporte compartilhado; uma mensagem WhatsApp em andamento não é interrompida. Após queda de conexão, respostas que aguardavam são canceladas. Um envio sem confirmação fica marcado como incerto e não é repetido automaticamente. A confirmação indica recebimento pelo servidor WhatsApp, não leitura no grupo.
-
-**Exportar JSON** salva posts, campanhas, grupos e regras sem sessão WhatsApp ou credenciais. **Importar JSON** aceita o arquivo exportado pelo SendAiPlus ou por esta área e valida os cadastros; mídias locais precisam continuar disponíveis para serem copiadas. **Criar backup SQLite** salva somente o banco do respondedor na pasta de dados; guarde também `data\autoresponder-media` se quiser preservar imagens e vídeos. Restaurar o banco cria antes uma cópia de segurança e, por precaução, deixa todos os grupos desativados e a simulação ligada. Nem importação nem restauração modificam o histórico de ofertas.
-
-Esta primeira etapa implementa respostas prontas disparadas por mensagens novas de grupos. Atendimento privado, menus e geração de respostas por IA ainda não fazem parte do módulo.
+- Entre ofertas do mesmo ciclo, o bot sorteia uma pausa de **2 a 5 minutos** (em segundos). Depois que o ciclo automático termina, sorteia **40 a 60 minutos** até o próximo. A Visão geral e o Console exibem as faixas, o tempo sorteado e a contagem regressiva. O intervalo de cinco segundos entre grupo e Canal não muda.
 
 O ícone **?** ao lado de cada configuração mostra uma explicação ao passar o mouse ou receber foco pelo teclado. No modo **Todos os grupos**, cooldown, limites e contagem de mensagens continuam separados por grupo, enquanto os limites globais continuam compartilhados. A mensagem recebida é um gatilho; o texto dela não é interpretado para escolher o post.
 

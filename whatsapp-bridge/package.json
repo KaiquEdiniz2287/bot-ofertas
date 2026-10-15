@@ -19,11 +19,5 @@
   },
   "devDependencies": {
     "@yao-pkg/pkg": "6.22.0"
-  },
-  "pkg": {
-    "scripts": [
-      "index.cjs",
-      "incoming.cjs"
-    ]
   }
 }

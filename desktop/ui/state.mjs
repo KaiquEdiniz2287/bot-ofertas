@@ -2,9 +2,10 @@ export function createState() {
   return {
     connected:false, botRunning:false, actionRunning:false, ready:false, logs:[], page:"overview",
     settings:null, history:[], whatsappStatus:"DISCONNECTED", whatsappAccount:"", whatsappQr:"",
-    whatsappGroups:[], pending:[], cycleRunning:false, pauseUntil:null, nextCycleAt:null, whatsappRetryAt:null,
+    whatsappGroups:[], pending:[], cycleRunning:false, pauseUntil:null, pauseKind:null, pauseDurationSeconds:null,
+    nextCycleAt:null, cycleWaitSeconds:null, whatsappRetryAt:null, whatsappNetworkUnavailable:false,
     whatsappRetryAttempt:0, whatsappRetryMax:5, browserInstalled:false, mlSessionDetected:false,
-    cycleIntervalMinutes:0, postSpacingSeconds:0, currentAction:null, sessionActions:{},
+    cycleIntervalRangeSeconds:null, postSpacingRangeSeconds:null, currentAction:null, sessionActions:{},
     productSearch:{query:"",loading:false,results:[],errors:[],searched:false},
   };
 }
@@ -32,4 +33,10 @@ export function finishSessionAction(state, key, succeeded, message) {
     currentAction:{...current,status:succeeded?"success":"error",message,finishedAt:Date.now()},
     sessionActions:succeeded?{...state.sessionActions,[key]:true}:state.sessionActions,
   };
+}
+
+export async function runPlatformTests(names, run) {
+  const results=[];
+  for (const [index,name] of names.entries()) results.push(await run(name,index+1));
+  return results;
 }

@@ -48,12 +48,12 @@ async function safeFetch(url, limit, redirects = 0, deadline = Date.now() + 1000
   return { buffer, headers: Object.fromEntries(response.headers), status: response.status, url: parsed.href };
 }
 
-async function previewImageData(buffer) {
+async function previewImageData(buffer, { channel = false } = {}) {
   try {
     const image = sharp(buffer, { limitInputPixels: 16_000_000, pages: 1 }).rotate();
     const [thumbnail, highQuality] = await Promise.all([
-      image.clone().resize({ width: 300, withoutEnlargement: true })
-        .flatten({ background: '#ffffff' }).jpeg({ quality: 65 }).toBuffer(),
+      image.clone().resize({ width: channel ? 512 : 300, withoutEnlargement: true })
+        .flatten({ background: '#ffffff' }).jpeg({ quality: channel ? 85 : 65 }).toBuffer(),
       image.clone().resize({ width: 1200, withoutEnlargement: true })
         .flatten({ background: '#ffffff' }).jpeg({ quality: 82 }).toBuffer({ resolveWithObject: true }),
     ]);
@@ -73,8 +73,8 @@ async function previewImageData(buffer) {
   }
 }
 
-async function thumbnailBuffer(buffer) {
-  return (await previewImageData(buffer)).thumbnail;
+async function thumbnailBuffer(buffer, options) {
+  return (await previewImageData(buffer, options)).thumbnail;
 }
 
 function previewContent(command, { title, description, thumbnail }) {
@@ -101,7 +101,7 @@ function isAmazonOffer(command) {
   }
 }
 
-async function buildStandardPreview(command) {
+async function buildStandardPreview(command, options) {
   const linkUrl = String(command.text).match(/https?:\/\/\S+/)?.[0];
   if (!linkUrl) throw new Error('A oferta não possui um link para gerar a prévia.');
   const page = await safeFetch(linkUrl, PAGE_LIMIT);
@@ -111,7 +111,7 @@ async function buildStandardPreview(command) {
   const imageUrl = Array.isArray(metadata?.images) ? metadata.images[0] : '';
   if (!metadata?.title || !imageUrl) throw new Error('O link não forneceu uma prévia completa.');
   const image = await safeFetch(new URL(imageUrl, page.url).href, IMAGE_LIMIT);
-  const previewImage = await previewImageData(image.buffer);
+  const previewImage = await previewImageData(image.buffer, options);
   return {
     content: previewContent({ ...command, linkUrl }, {
       title: metadata.title,
@@ -123,11 +123,11 @@ async function buildStandardPreview(command) {
   };
 }
 
-async function buildFallbackPreview(command) {
+async function buildFallbackPreview(command, options) {
   const linkUrl = String(command.text).match(/https?:\/\/\S+/)?.[0];
   if (!linkUrl || !command.imageUrl) throw new Error('A oferta não possui imagem principal para montar a prévia.');
   const image = await safeFetch(command.imageUrl, IMAGE_LIMIT);
-  const previewImage = await previewImageData(image.buffer);
+  const previewImage = await previewImageData(image.buffer, options);
   return {
     content: previewContent({ ...command, linkUrl }, {
       title: command.title,

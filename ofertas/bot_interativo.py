@@ -4,6 +4,7 @@ qualquer link colado (ML/Shopee/Amazon/AliExpress) em post com o seu link de afi
 import asyncio
 import datetime as dt
 import logging
+import random
 import secrets
 import sys
 import warnings
@@ -51,10 +52,12 @@ async def _cmd_status(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                                    ("Shopee", config.fonte_shopee),
                                    ("Amazon", config.fonte_amazon),
                                    ("AliExpress", config.fonte_aliexpress)) if f.get("ativa")]
+    pausa_ciclos = (f"{config.intervalo_ciclo_min_minutos}–{config.intervalo_ciclo_max_minutos} min "
+                    "(sorteada a cada ciclo)" if config.intervalo_minutos > 0 else "desativada")
     await update.message.reply_text(
         f"📊 {db.total_postadas()} ofertas postadas até agora\n"
         f"🔎 Fontes automáticas: {', '.join(fontes) or 'nenhuma'}\n"
-        f"⏱ Ciclo a cada {config.intervalo_minutos} min, "
+        f"⏱ Pausa entre ciclos: {pausa_ciclos}, "
         f"máx. {config.max_posts_por_ciclo} posts por ciclo\n"
         f"🎯 Desconto mínimo: {config.desconto_minimo}%"
     )
@@ -159,7 +162,8 @@ async def _callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 async def _job_ciclo(ctx: ContextTypes.DEFAULT_TYPE):
     callback = ctx.application.bot_data.get("state_callback")
     if callback:
-        callback({"cycleRunning": True, "pauseUntil": None})
+        callback({"cycleRunning": True, "pauseUntil": None, "pauseKind": None,
+                  "pauseDurationSeconds": None, "cycleWaitSeconds": None})
     log.info("Ciclo automático iniciado.")
     try:
         await pipeline.executar_ciclo(
@@ -169,20 +173,22 @@ async def _job_ciclo(ctx: ContextTypes.DEFAULT_TYPE):
         log.exception("Ciclo automático falhou")
         await pipeline.avisar_dono(ctx.bot, f"⚠️ O ciclo automático falhou: {type(e).__name__}: {e}")
     finally:
-        proximo = getattr(getattr(ctx, "job", None), "next_t", None)
-        if proximo is None:
-            proximo = dt.datetime.now().astimezone() + dt.timedelta(minutes=config.intervalo_minutos)
-        else:
-            proximo = proximo.astimezone()
+        espera = random.randint(config.intervalo_ciclo_min_minutos * 60,
+                                config.intervalo_ciclo_max_minutos * 60)
+        proximo = dt.datetime.now().astimezone() + dt.timedelta(seconds=espera)
+        ctx.application.job_queue.run_once(_job_ciclo, when=espera, job_kwargs=CYCLE_JOB_KWARGS)
         if callback:
             callback({
                 "cycleRunning": False,
                 "nextCycleAt": proximo.isoformat(timespec="seconds"),
+                "cycleWaitSeconds": espera,
                 "pauseUntil": None,
+                "pauseKind": None,
+                "pauseDurationSeconds": None,
             })
         log.info(
-            "Próximo ciclo automático em %d minuto(s), previsto para %s.",
-            config.intervalo_minutos, proximo.strftime("%H:%M:%S"),
+            "Pausa sorteada entre ciclos: %s. Próximo ciclo previsto para %s.",
+            pipeline._duracao(espera), proximo.strftime("%H:%M:%S"),
         )
 
 
@@ -216,18 +222,17 @@ def criar_aplicacao(whatsapp=None, state_callback=None) -> Application:
     tem_fonte = any(f.get("ativa") for f in
                     (config.fonte_ml, config.fonte_shopee, config.fonte_amazon, config.fonte_aliexpress))
     if tem_fonte and config.intervalo_minutos > 0 and config.chat_id:
-        app.job_queue.run_repeating(
+        app.job_queue.run_once(
             _job_ciclo,
-            interval=config.intervalo_minutos * 60,
-            first=30,
+            when=30,
             job_kwargs=CYCLE_JOB_KWARGS,
         )
         primeiro = dt.datetime.now() + dt.timedelta(seconds=30)
         if state_callback:
             state_callback({"nextCycleAt": primeiro.isoformat(timespec="seconds")})
         log.info(
-            "Ciclo automático ativo a cada %d minuto(s). Primeira busca prevista para %s.",
-            config.intervalo_minutos, primeiro.strftime("%H:%M:%S"),
+            "Ciclo automático ativo com pausas sorteadas de %d a %d minuto(s). Primeira busca prevista para %s.",
+            config.intervalo_ciclo_min_minutos, config.intervalo_ciclo_max_minutos, primeiro.strftime("%H:%M:%S"),
         )
     else:
         log.info("Ciclo automático desligado (sem fonte ativa ou sem CHAT_ID)")
@@ -289,7 +294,9 @@ class BotRuntime:
             await app.stop()
             await app.shutdown()
             if self._state_callback:
-                self._state_callback({"cycleRunning": False, "nextCycleAt": None, "pauseUntil": None})
+                self._state_callback({"cycleRunning": False, "nextCycleAt": None,
+                                      "cycleWaitSeconds": None, "pauseUntil": None,
+                                      "pauseKind": None, "pauseDurationSeconds": None})
             return True
 
 

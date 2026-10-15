@@ -35,6 +35,18 @@ test('converte a imagem principal em thumbnail JPEG compatível', async () => {
   assert.ok(thumbnail.length > 100);
 });
 
+test('prévia do Canal preserva mais detalhes sem ampliar a imagem original', async () => {
+  const source = await QRCode.toBuffer('prévia nítida do Canal', { width: 700 });
+  const group = await thumbnailBuffer(source);
+  const channel = await thumbnailBuffer(source, { channel: true });
+  assert.equal((await sharp(group).metadata()).width, 300);
+  assert.equal((await sharp(channel).metadata()).width, 512);
+  assert.ok(channel.length > group.length);
+
+  const smaller = await QRCode.toBuffer('imagem original menor', { width: 400 });
+  assert.equal((await sharp(await thumbnailBuffer(smaller, { channel: true })).metadata()).width, 400);
+});
+
 test('converte WebP e AVIF dos marketplaces em JPEG compatível', async () => {
   const source = await QRCode.toBuffer('prévia dos marketplaces', { width: 500 });
   for (const image of [await sharp(source).webp().toBuffer(), await sharp(source).avif().toBuffer()]) {

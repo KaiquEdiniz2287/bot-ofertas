@@ -7,14 +7,11 @@ const app = readFileSync(new URL("./app.js", import.meta.url), "utf8");
 const html = readFileSync(new URL("./index.html", import.meta.url), "utf8");
 const rust = readFileSync(new URL("../src-tauri/src/main.rs", import.meta.url), "utf8");
 const backend = readFileSync(new URL("../src-tauri/src/backend.rs", import.meta.url), "utf8");
-const responder = readFileSync(new URL("./autoresponder/app.js", import.meta.url), "utf8");
-const responderCss = readFileSync(new URL("./autoresponder/styles.css", import.meta.url), "utf8");
-
-test("explica configurações e permite uma regra para todos os grupos", () => {
-  assert.match(responder, /Todos os grupos/);
-  assert.match(responder, /data-tip=/);
-  assert.match(responder, /tabindex="0"/);
-  assert.match(responderCss, /\.ar-help:is\(:hover,:focus-visible\)::after/);
+test("mantém somente as áreas de ofertas e a conexão WhatsApp", () => {
+  assert.doesNotMatch(html, /data-page="autoresponder"/);
+  assert.doesNotMatch(app, /autoresponder|refreshResponder/);
+  assert.match(html, /data-page="whatsapp"/);
+  assert.match(app, /whatsapp_test/);
 });
 
 test("contém largura e textos longos sem vazar da janela", () => {
@@ -28,6 +25,13 @@ test("mantém tabela e ações utilizáveis", () => {
   assert.match(css, /\.table-wrap\s*\{[^}]*overflow-x:\s*auto/);
   assert.match(css, /\.actions \.primary/);
   assert.match(app, /Nenhuma oferta registrada/);
+});
+
+test("histórico permite copiar cada oferta e atualiza sem recarregar a página", () => {
+  assert.match(app, /data-copy-history="\$\{index\}"/);
+  assert.match(app, /navigator\.clipboard\.writeText\(item\.texto\)/);
+  assert.match(app, /if\(page==="history"\)void refreshHistory\(\)/);
+  assert.match(app, /setInterval\(\(\)=>\{if\(state\.page==="history"\)void refreshHistory\(\)\},3000\)/);
 });
 
 test("exibe as credenciais da Amazon nas configurações", () => {
@@ -113,6 +117,19 @@ test("centraliza ciclo, temporizadores e estados das operações", () => {
   assert.match(app, /Concluído nesta sessão/);
 });
 
+test("separa testes das ferramentas e oferece execução sequencial", () => {
+  const operation = app.slice(app.indexOf('if(state.page==="operation")'), app.indexOf('if(state.page==="console")'));
+  const split = operation.indexOf("PREPARAÇÃO DO AMBIENTE");
+  const tests = operation.slice(0,split), setup = operation.slice(split);
+  assert.match(tests,/data-action="test-all"/);
+  for(const source of ["ml","shopee","amazon","aliexpress"])assert.match(tests,new RegExp(`data-action="${source}"`));
+  assert.doesNotMatch(tests,/data-action="login"|data-action="browser"/);
+  assert.match(setup,/data-action="login"/);
+  assert.match(setup,/data-action="browser"/);
+  assert.doesNotMatch(setup,/data-action="ml"|data-action="shopee"|data-action="amazon"|data-action="aliexpress"/);
+  assert.match(app,/runPlatformTests\(platformTests/);
+});
+
 test("remove indicadores repetidos somente da Visão geral", () => {
   const overview = app.slice(app.indexOf('if(state.page==="overview")'), app.indexOf('if(state.page==="search")'));
   assert.match(app, /const nextCycle=compact\?""/);
@@ -131,6 +148,19 @@ test("organiza os indicadores restantes em toda a largura", () => {
 test("distingue bot aguardando de ciclo realmente em execução", () => {
   assert.match(app, /state\.cycleRunning\?"Ciclo em execução":state\.botRunning\?"Bot aguardando próximo ciclo"/);
   assert.match(app, /state\.cycleRunning\?"Em andamento":formatCountdown\(state\.nextCycleAt\)/);
+});
+
+test("mostra as faixas sorteadas e o tempo escolhido nos temporizadores", () => {
+  assert.match(app,/formatRange\(state\.cycleIntervalRangeSeconds\)/);
+  assert.match(app,/formatRange\(state\.postSpacingRangeSeconds\)/);
+  assert.match(app,/formatDuration\(state\.cycleWaitSeconds\)/);
+  assert.match(app,/formatDuration\(state\.pauseDurationSeconds\)/);
+});
+
+test("distingue espera pela rede de tentativas de reconexão do WhatsApp", () => {
+  assert.match(app,/whatsappNetworkUnavailable:Boolean\(payload\.networkUnavailable\)/);
+  assert.match(app,/Rede ou DNS indisponível\. Nova verificação em/);
+  assert.match(app,/return"Aguardando rede"/);
 });
 
 test("usa logomarcas locais das plataformas", () => {

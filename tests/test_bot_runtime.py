@@ -59,14 +59,18 @@ class BotRuntimeTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_ciclo_atrasado_executa_e_renova_o_proximo_horario(self):
         states = []
-        next_run = dt.datetime.now(dt.timezone.utc) + dt.timedelta(minutes=45)
+        scheduled = []
         context = SimpleNamespace(
             bot=object(),
-            job=SimpleNamespace(next_t=next_run),
-            application=SimpleNamespace(bot_data={"whatsapp": None, "state_callback": states.append}),
+            application=SimpleNamespace(
+                bot_data={"whatsapp": None, "state_callback": states.append},
+                job_queue=SimpleNamespace(run_once=lambda *args, **kwargs: scheduled.append((args, kwargs))),
+            ),
         )
 
-        with patch("ofertas.bot_interativo.pipeline.executar_ciclo", new=AsyncMock(return_value=0)):
+        with patch("ofertas.bot_interativo.pipeline.executar_ciclo", new=AsyncMock(return_value=0)), patch(
+            "ofertas.bot_interativo.random.randint", return_value=47 * 60 + 33,
+        ) as draw:
             await _job_ciclo(context)
 
         self.assertEqual(CYCLE_JOB_KWARGS, {
@@ -75,6 +79,10 @@ class BotRuntimeTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(states[0]["cycleRunning"])
         self.assertFalse(states[-1]["cycleRunning"])
         self.assertIsNotNone(states[-1]["nextCycleAt"])
+        self.assertEqual(states[-1]["cycleWaitSeconds"], 47 * 60 + 33)
+        self.assertEqual(scheduled[0][1]["when"], 47 * 60 + 33)
+        self.assertEqual(scheduled[0][1]["job_kwargs"], CYCLE_JOB_KWARGS)
+        draw.assert_called_once_with(40 * 60, 60 * 60)
 
     async def test_start_stop_gracioso(self):
         app = FakeApplication()

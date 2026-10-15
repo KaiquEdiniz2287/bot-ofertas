@@ -51,7 +51,8 @@ class _LineRedirector:
 class DesktopService:
     def __init__(self, emitter: JsonEmitter, runtime: BotRuntime | None = None):
         self.emitter = emitter
-        self._runtime_state = {"cycleRunning": False, "pauseUntil": None, "nextCycleAt": None}
+        self._runtime_state = {"cycleRunning": False, "pauseUntil": None, "nextCycleAt": None,
+                               "pauseKind": None, "pauseDurationSeconds": None, "cycleWaitSeconds": None}
         self._last_whatsapp_status = "DISCONNECTED"
         self.whatsapp = WhatsAppBridge(self._on_whatsapp_event)
         self.runtime = runtime or BotRuntime(
@@ -61,9 +62,6 @@ class DesktopService:
         self._ml_lock = asyncio.Lock()
         self._search_lock = asyncio.Lock()
         self._shutdown = False
-        self._responder = None
-        self._responder_start_task = None
-        self._responder_auto_start_pending = True
         self._handlers = {
             "get_status": self._get_status,
             "get_settings": self._get_settings,
@@ -85,7 +83,6 @@ class DesktopService:
             "get_pending_deliveries": self._get_pending_deliveries,
             "retry_delivery": self._retry_delivery,
             "shutdown": self._shutdown_service,
-            "autoresponder": self._autoresponder,
         }
 
     def _update_runtime_state(self, updates: dict) -> None:
@@ -93,22 +90,13 @@ class DesktopService:
         self._emit_state()
 
     def _on_whatsapp_event(self, event: str, payload: dict) -> None:
-        if event == "incoming_messages":
-            if self._responder:
-                self._responder.runtime.receive(payload)
-            return
         if event == "connection_state":
             status = str(payload.get("status") or "DISCONNECTED")
-            if self._responder and self._responder.runtime.running:
-                if status == 'CONNECTED' and self._last_whatsapp_status != 'CONNECTED':
-                    asyncio.create_task(self._responder.runtime.resubscribe())
-                elif status in ('RECONNECTING', 'DISCONNECTED', 'LOGGED_OUT', 'RECONNECT_FAILED'):
-                    self._responder.runtime.disconnected()
             labels = {
                 "CONNECTING": "conectando",
                 "AWAITING_QR": "aguardando leitura do QR Code",
                 "CONNECTED": "conectado",
-                "RECONNECTING": "reconectando automaticamente",
+                "RECONNECTING": "aguardando rede" if payload.get("networkUnavailable") else "reconectando automaticamente",
                 "RECONNECT_FAILED": "reconexão automática encerrada",
                 "DISCONNECTED": "desconectado",
                 "LOGGED_OUT": "sessão removida",
@@ -118,9 +106,6 @@ class DesktopService:
             if detail:
                 self.emitter.log("WARNING", "WhatsApp", detail)
             if status == "CONNECTED" and self._last_whatsapp_status != "CONNECTED":
-                if self._responder and self._responder_auto_start_pending and not self._responder.runtime.running and self._responder.repo.config()['settings']['autoStart']:
-                    self._responder_auto_start_pending = False
-                    self._responder_start_task = asyncio.create_task(self._start_responder_safely())
                 pending = db.total_pendentes_whatsapp()
                 if pending:
                     self.emitter.log(
@@ -159,8 +144,12 @@ class DesktopService:
             "pendingDeliveries": db.total_pendentes_whatsapp(),
             "browserInstalled": bool(list(browser_dir.glob("chromium-*"))),
             "mlSessionDetected": ml_profile.exists() and any(ml_profile.iterdir()),
-            "cycleIntervalMinutes": config.intervalo_minutos,
-            "postSpacingSeconds": config.espacamento_segundos,
+            "cycleIntervalRangeSeconds": [config.intervalo_ciclo_min_minutos * 60,
+                                          config.intervalo_ciclo_max_minutos * 60]
+            if config.intervalo_minutos > 0 else None,
+            "postSpacingRangeSeconds": [config.espacamento_min_segundos,
+                                        config.espacamento_max_segundos]
+            if config.espacamento_segundos > 0 else None,
             **self._runtime_state,
         }
 
@@ -171,20 +160,6 @@ class DesktopService:
 
     async def _get_status(self, _):
         return self._state()
-
-    async def _autoresponder(self, payload):
-        if self._responder is None:
-            from .autoresponder.service import Service
-            self._responder = Service(DATA_DIR, self.whatsapp, lambda: self.emitter.emit({"type": "autoresponder"}))
-        if payload.get('action') in ('start', 'stop'):
-            self._responder_auto_start_pending = False
-        return await self._responder.handle(payload)
-
-    async def _start_responder_safely(self):
-        try:
-            await self._responder.runtime.start()
-        except Exception as exc:
-            self.emitter.log('WARNING', 'respostas', f'Não foi possível iniciar as respostas: {exc}')
 
     async def _get_settings(self, _):
         settings = await asyncio.to_thread(read_settings, True)
@@ -441,10 +416,6 @@ class DesktopService:
 
     async def _shutdown_service(self, _):
         self._shutdown = True
-        if self._responder_start_task:
-            self._responder_start_task.cancel()
-        if self._responder:
-            await self._responder.runtime.close()
         await self.runtime.stop()
         await self.whatsapp.shutdown()
         return {"shutdown": True}
@@ -453,8 +424,6 @@ class DesktopService:
 async def _run(emitter: JsonEmitter) -> None:
     service = DesktopService(emitter)
     emitter.emit({"type": "ready", "state": service._state()})
-    if (DATA_DIR / 'autoresponder.db').exists():
-        await service._autoresponder({'action': 'status'})
     await service._connect_whatsapp_on_start()
     while not service._shutdown:
         line = await asyncio.to_thread(sys.stdin.readline)
@@ -467,8 +436,6 @@ async def _run(emitter: JsonEmitter) -> None:
             response = {"type": "response", "id": None, "ok": False, "error": str(exc)}
         emitter.emit(response)
     await service.runtime.stop()
-    if service._responder:
-        await service._responder.runtime.close()
     await service.whatsapp.shutdown()
 
 

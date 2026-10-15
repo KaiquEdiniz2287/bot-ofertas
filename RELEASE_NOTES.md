@@ -1,3 +1,128 @@
+# 0.17.0 — Histórico com cópia e atualização automática
+
+- Cada produto do Histórico agora tem um botão **Copiar** para compartilhar o texto da oferta.
+- Novas publicações guardam o texto completo, com preço, desconto, plataforma e link afiliado.
+- Registros antigos usam os dados completos ainda disponíveis; quando o link não foi armazenado, o texto copiado contém apenas os dados preservados, sem criar um link incorreto.
+- Enquanto a aba Histórico está aberta, a lista consulta novas publicações automaticamente a cada três segundos, sem recarregar a página.
+- Busca, publicação, Telegram e WhatsApp não foram alterados.
+
+## Versionamento
+
+Versão: 0.16.2 → 0.17.0
+Tipo: MINOR
+Motivo: adição compatível de cópia e atualização automática ao Histórico.
+
+---
+
+# 0.16.2 — Reenvio correto de ofertas antigas ao WhatsApp
+
+- Corrigido o bloqueio de ofertas republicadas: o WhatsApp considerava uma entrega antiga como definitiva, mesmo após o prazo de repetição configurado para o Telegram.
+- Após esse prazo, um novo ciclo pode enviar novamente a oferta ao grupo e ao Canal ativos, mantendo o intervalo entre os dois destinos.
+- Entregas recentes continuam protegidas contra duplicatas; falhas pendentes continuam sem reenvio automático.
+
+## Versionamento
+
+Versão: 0.16.1 → 0.16.2
+Tipo: PATCH
+Motivo: correção compatível da deduplicação de entregas do WhatsApp.
+
+---
+
+# 0.16.1 — Reconexão do WhatsApp após falha de rede
+
+- Corrigido o caso em que uma queda de DNS esgotava as cinco tentativas de reconexão antes de a internet voltar, deixando o WhatsApp permanentemente à espera de um clique manual.
+- Erros de rede ou DNS agora colocam a conexão em espera, com verificação a cada 30 segundos; essas verificações não consomem as cinco tentativas.
+- A tela do WhatsApp e o Console distinguem “aguardando rede” de uma tentativa de reconexão; avisos idênticos não são repetidos a cada verificação.
+- Sessão realmente removida continua exigindo novo QR Code. Envios pendentes continuam exclusivamente manuais, sem reenvio automático.
+- Os fluxos de Telegram, Amazon e Mercado Livre não foram alterados.
+
+## Versionamento
+
+Versão: 0.16.0 → 0.16.1
+Tipo: PATCH
+Motivo: correção compatível da reconexão após indisponibilidade temporária de rede.
+
+---
+
+# 0.16.0 — Pausas variáveis entre ofertas e ciclos
+
+- Cada pausa entre ofertas de um mesmo ciclo agora é sorteada independentemente entre 2 e 5 minutos, com precisão de segundos.
+- Ao terminar um ciclo automático, o próximo é agendado após uma pausa sorteada entre 40 e 60 minutos, também com precisão de segundos.
+- A Visão geral e o Console mostram as faixas, o tempo efetivamente sorteado e a contagem regressiva.
+- O primeiro ciclo após iniciar o bot, o ciclo manual e o intervalo de cinco segundos entre grupo e Canal permanecem como antes.
+- Configurações antigas continuam compatíveis; valores zero nas opções legadas continuam desativando o ciclo automático ou a pausa entre ofertas.
+
+## Versionamento
+
+Versão: 0.15.1 → 0.16.0
+Tipo: MINOR
+Motivo: nova política de agendamento compatível, com visibilidade dos tempos no aplicativo.
+
+---
+
+# 0.15.1 — Prévia estável no Canal do WhatsApp
+
+- A miniatura incorporada nas prévias do Canal passou de 300 px com JPEG de qualidade 65 para até 512 px com qualidade 85, sem ampliar artificialmente imagens menores.
+- O Canal não anexa mais a mídia HD ao cartão: dois testes reais confirmaram que ela ficava borrada ou preta no WhatsApp móvel, inclusive com o caminho de upload específico dos Canais.
+- A imagem do produto permanece incorporada em JPEG no próprio cartão, com título, descrição e link; sua resolução foi aumentada para reduzir a perda de nitidez.
+- O envio ao grupo e o modo de foto completa com legenda permanecem inalterados.
+- O terceiro teste confirmou a foto visível em um cartão compacto no computador e no celular. O tamanho do cartão ainda é controlado pelo cliente WhatsApp, não pelo aplicativo.
+
+## Versionamento
+
+Versão: 0.15.0 → 0.15.1
+Tipo: PATCH
+Motivo: correção compatível da imagem preta no WhatsApp móvel, preservando um cartão de prévia legível no Canal.
+
+---
+
+# 0.15.0 — Operação organizada e testes em sequência
+
+- A tela Operação separa os testes das quatro plataformas das ferramentas de preparação do ambiente.
+- O botão **Testar todas em sequência** executa Mercado Livre, Shopee, Amazon e AliExpress, aguardando cada teste terminar antes do próximo.
+- Uma falha individual não impede os testes seguintes; o resumo final mostra quais plataformas falharam.
+- Login do Mercado Livre e instalação do navegador continuam disponíveis em um bloco próprio, fora da sequência automática.
+- Os comandos de teste, os indicadores da sessão e os fluxos de publicação permanecem inalterados.
+
+## Versionamento
+
+Versão: 0.14.1 → 0.15.0
+Tipo: MINOR
+Motivo: adição compatível de uma ação sequencial de teste e reorganização visual da tela Operação.
+
+---
+
+# 0.14.1 — Acesso às ofertas do Mercado Livre
+
+- Corrigido o falso resultado de zero ofertas quando o Mercado Livre redireciona a busca para verificação de conta.
+- Se o acesso público falhar ou expirar, a busca tenta a sessão do Mercado Livre já salva no navegador do aplicativo.
+- Caso o site também bloqueie essa sessão, o teste informa que é preciso revalidar a conta, sem esconder a falha como ausência de produtos.
+- Timeouts da página passam a gerar uma mensagem clara, sem traceback no console do aplicativo.
+- As demais fontes e a geração dos links de afiliado não foram alteradas.
+
+## Versionamento
+
+Versão: 0.14.0 → 0.14.1
+Tipo: PATCH
+Motivo: correção compatível da coleta e do diagnóstico de acesso às ofertas do Mercado Livre.
+
+---
+
+# 0.14.0 — Aplicativo dedicado às ofertas
+
+- Removidos a aba e os comandos do respondedor automático de mensagens em grupos.
+- Retirados o recebimento de mensagens para respostas, a fila, as regras e a inicialização automática do respondedor.
+- O WhatsApp continua conectado para publicar ofertas no grupo e no Canal, testar destinos e administrar pendências; Telegram, busca e demais marketplaces não foram alterados.
+- Cadastros e mídias antigos do respondedor permanecem nos dados locais, sem serem carregados ou executados pelo aplicativo. Nenhum dado pessoal foi apagado.
+
+## Versionamento
+
+Versão: 0.13.2 → 0.14.0
+Tipo: MINOR (série 0.x)
+Motivo: mudança de escopo do produto solicitada pelo usuário, mantendo o fluxo de ofertas e sinalizando a remoção da funcionalidade experimental.
+
+---
+
 # 0.13.2 — Diagnóstico claro das respostas automáticas
 
 - O Resumo do respondedor agora mostra os pré-requisitos para responder: WhatsApp conectado, post/campanha/grupo ativos, respondedor iniciado e simulação desligada para envio real.

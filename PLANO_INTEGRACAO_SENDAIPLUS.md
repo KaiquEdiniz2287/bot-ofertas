@@ -1,5 +1,7 @@
 # Integração do SendAiPlus ao Bot de Ofertas
 
+> Plano histórico encerrado em 05/10/2026 a pedido do usuário. O respondedor foi retirado do Bot de Ofertas; este documento não descreve funcionalidades disponíveis no aplicativo atual. O projeto SendAiPlus permanece separado.
+
 Data: 04/10/2026
 Estado: primeira implementação funcional concluída na versão 0.13.0; modo geral e simplificação das configurações corrigidos na 0.13.1. Validação ao vivo em grupo de teste ainda pendente.
 

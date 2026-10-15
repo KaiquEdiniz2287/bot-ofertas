@@ -15,8 +15,9 @@ import sys
 import threading
 import time
 from pathlib import Path
-from urllib.parse import parse_qs, quote_plus, urlsplit
+from urllib.parse import parse_qs, quote_plus, urlencode, urlsplit
 
+import requests
 from bs4 import BeautifulSoup
 
 from ..config import DATA_DIR, config
@@ -63,15 +64,59 @@ def buscar_ofertas() -> list[Oferta]:
                 params["category"] = cat_id
             if pagina > 1:
                 params["page"] = pagina
-            r = s.get(URL_OFERTAS, params=params or None, timeout=30)
-            r.raise_for_status()
-            achadas = _parse_pagina(r.text)
+            achadas = _parse_pagina(_html_ofertas(s, params))
             for o in achadas:
                 ofertas.setdefault(o.id_produto, o)
             log.info("Mercado Livre %s: %d ofertas", nome, len(achadas))
             time.sleep(1)
     log.info("Mercado Livre: %d ofertas coletadas", len(ofertas))
     return list(ofertas.values())
+
+
+def _html_ofertas(s: requests.Session, params: dict) -> str:
+    """Usa a sessão já verificada do usuário se o acesso público for barrado."""
+    try:
+        r = s.get(URL_OFERTAS, params=params or None, timeout=(10, 20))
+        if r.ok and "account-verification" not in r.url and BeautifulSoup(r.text, "lxml").select_one("div.poly-card"):
+            return r.text
+        motivo = "O Mercado Livre pediu verificação da conta" if "account-verification" in r.url else (
+            f"O Mercado Livre respondeu HTTP {r.status_code} ou não exibiu ofertas"
+        )
+    except requests.exceptions.Timeout:
+        motivo = "O Mercado Livre não respondeu a tempo"
+    except requests.exceptions.RequestException as exc:
+        motivo = f"Não foi possível acessar o Mercado Livre ({type(exc).__name__})"
+
+    if not tem_sessao():
+        raise ValueError(f"{motivo}. Faça o login do Mercado Livre em Operação e tente novamente.")
+    log.warning("%s; tentando a sessão já conectada no navegador.", motivo)
+    return _html_ofertas_logado(params)
+
+
+def _html_ofertas_logado(params: dict) -> str:
+    from playwright.sync_api import TimeoutError as PlaywrightTimeout, sync_playwright
+
+    url = URL_OFERTAS + ("?" + urlencode(params) if params else "")
+    with _PERFIL_LOCK, sync_playwright() as pw:
+        ctx = _abrir_contexto(pw, headless=True)
+        try:
+            page = ctx.pages[0] if ctx.pages else ctx.new_page()
+            try:
+                response = page.goto(url, wait_until="domcontentloaded", timeout=30_000)
+                if not response or response.status >= 400 or "account-verification" in page.url:
+                    raise ValueError("O Mercado Livre bloqueou a página de ofertas. Revalide a conta em Operação > Login do Mercado Livre.")
+                try:
+                    page.wait_for_selector("div.poly-card", timeout=10_000)
+                except PlaywrightTimeout:
+                    pass
+            except PlaywrightTimeout as exc:
+                raise ValueError("O Mercado Livre não respondeu no navegador. Tente novamente mais tarde.") from exc
+            html = page.content()
+            if not BeautifulSoup(html, "lxml").select_one("div.poly-card"):
+                raise ValueError("O Mercado Livre abriu, mas não mostrou ofertas. Confira a página no navegador e revalide a conta se necessário.")
+            return html
+        finally:
+            ctx.close()
 
 
 def _preco_de(card, seletor_base: str) -> float | None:

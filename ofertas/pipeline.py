@@ -1,6 +1,7 @@
 import asyncio
 import datetime as dt
 import logging
+import random
 import re
 
 from telegram import Bot
@@ -182,7 +183,8 @@ async def executar_ciclo(bot: Bot, whatsapp=None, state_callback=None) -> int:
             continue
 
         prepared_destinations = set(db.preparar_entregas_whatsapp(
-            o, [destination for _, destination in whatsapp_destinations]
+            o, [destination for _, destination in whatsapp_destinations],
+            nao_repetir_dias=config.nao_repetir_dias,
         ))
         new_whatsapp_deliveries = [
             (label, destination) for label, destination in whatsapp_destinations
@@ -206,13 +208,14 @@ async def executar_ciclo(bot: Bot, whatsapp=None, state_callback=None) -> int:
         for destination_index, (destination_label, destination) in enumerate(new_whatsapp_deliveries):
             if destination_index:
                 retoma = dt.datetime.now() + dt.timedelta(seconds=WHATSAPP_DESTINATION_DELAY_SECONDS)
-                _informar_estado(state_callback, pauseUntil=retoma.isoformat(timespec="seconds"))
+                _informar_estado(state_callback, pauseUntil=retoma.isoformat(timespec="seconds"),
+                                 pauseKind="destinos", pauseDurationSeconds=WHATSAPP_DESTINATION_DELAY_SECONDS)
                 log.info(
                     "Pausa de %s antes de publicar a mesma oferta no %s.",
                     _duracao(WHATSAPP_DESTINATION_DELAY_SECONDS), destination_label,
                 )
                 await asyncio.sleep(WHATSAPP_DESTINATION_DELAY_SECONDS)
-                _informar_estado(state_callback, pauseUntil=None)
+                _informar_estado(state_callback, pauseUntil=None, pauseKind=None, pauseDurationSeconds=None)
             if whatsapp and whatsapp.connected:
                 try:
                     message_id = await whatsapp.send_offer(
@@ -236,14 +239,16 @@ async def executar_ciclo(bot: Bot, whatsapp=None, state_callback=None) -> int:
                 )
 
         if index < len(escolhidas) - 1 and config.espacamento_segundos > 0:
-            retoma = dt.datetime.now() + dt.timedelta(seconds=config.espacamento_segundos)
-            _informar_estado(state_callback, pauseUntil=retoma.isoformat(timespec="seconds"))
+            espera = random.randint(config.espacamento_min_segundos, config.espacamento_max_segundos)
+            retoma = dt.datetime.now() + dt.timedelta(seconds=espera)
+            _informar_estado(state_callback, pauseUntil=retoma.isoformat(timespec="seconds"),
+                             pauseKind="ofertas", pauseDurationSeconds=espera)
             log.info(
-                "Pausa entre ofertas: %s. Próximo envio previsto para %s.",
-                _duracao(config.espacamento_segundos), retoma.strftime("%H:%M:%S"),
+                "Pausa sorteada entre ofertas: %s. Próximo envio previsto para %s.",
+                _duracao(espera), retoma.strftime("%H:%M:%S"),
             )
-            await asyncio.sleep(config.espacamento_segundos)
-            _informar_estado(state_callback, pauseUntil=None)
+            await asyncio.sleep(espera)
+            _informar_estado(state_callback, pauseUntil=None, pauseKind=None, pauseDurationSeconds=None)
             log.info("Pausa concluída. Retomando os envios.")
 
     pendentes = db.total_pendentes_whatsapp() if whatsapp_enabled else 0

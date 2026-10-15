@@ -148,17 +148,31 @@ def _validate_yaml(value: dict) -> None:
     filtros = value.get("filtros") or {}
     integer_limits = {
         "intervalo_minutos": (0, 10080),
+        "intervalo_ciclo_min_minutos": (1, 10080),
+        "intervalo_ciclo_max_minutos": (1, 10080),
         "max_posts_por_ciclo": (1, 100),
         "espacamento_segundos": (0, 86400),
+        "espacamento_min_segundos": (0, 86400),
+        "espacamento_max_segundos": (0, 86400),
         "nao_repetir_dias": (0, 3650),
+    }
+    range_defaults = {
+        "intervalo_ciclo_min_minutos": 40,
+        "intervalo_ciclo_max_minutos": 60,
+        "espacamento_min_segundos": 120,
+        "espacamento_max_segundos": 300,
     }
     for key, (minimum, maximum) in integer_limits.items():
         try:
-            number = int(geral.get(key, 0))
+            number = int(geral.get(key, range_defaults.get(key, 0)))
         except (TypeError, ValueError) as exc:
             raise SettingsError(f"{key} deve ser um número inteiro.") from exc
         if not minimum <= number <= maximum:
             raise SettingsError(f"{key} deve ficar entre {minimum} e {maximum}.")
+    for lower, upper in (("intervalo_ciclo_min_minutos", "intervalo_ciclo_max_minutos"),
+                         ("espacamento_min_segundos", "espacamento_max_segundos")):
+        if int(geral.get(lower, range_defaults[lower])) > int(geral.get(upper, range_defaults[upper])):
+            raise SettingsError(f"{lower} não pode ser maior que {upper}.")
     for key in ("desconto_minimo", "preco_minimo", "preco_maximo"):
         try:
             number = float(filtros.get(key, 0))

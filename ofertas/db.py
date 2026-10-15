@@ -5,6 +5,7 @@ from contextlib import closing
 from dataclasses import asdict
 
 from .config import DATA_DIR
+from .formatter import montar_whatsapp, preco_br
 from .models import Oferta
 
 _DB = DATA_DIR / "ofertas.db"
@@ -21,6 +22,8 @@ def _conn() -> sqlite3.Connection:
         " preco REAL,"
         " postada_em TEXT)"
     )
+    if "texto" not in {row[1] for row in c.execute("PRAGMA table_info(postadas)")}:
+        c.execute("ALTER TABLE postadas ADD COLUMN texto TEXT")
     c.execute(
         "CREATE TABLE IF NOT EXISTS publicacoes ("
         " uid TEXT PRIMARY KEY,"
@@ -59,10 +62,10 @@ def ja_postada(uid: str, dentro_de_dias: int) -> bool:
 def registrar(oferta: Oferta) -> None:
     with closing(_conn()) as c, c:
         c.execute(
-            "INSERT OR REPLACE INTO postadas (uid, plataforma, titulo, preco, postada_em)"
-            " VALUES (?, ?, ?, ?, ?)",
+            "INSERT OR REPLACE INTO postadas (uid, plataforma, titulo, preco, postada_em, texto)"
+            " VALUES (?, ?, ?, ?, ?, ?)",
             (oferta.uid, oferta.plataforma, oferta.titulo, oferta.preco,
-             dt.datetime.now().isoformat(timespec="seconds")),
+             dt.datetime.now().isoformat(timespec="seconds"), montar_whatsapp(oferta)),
         )
 
 
@@ -77,15 +80,32 @@ def listar(limit: int = 100, offset: int = 0) -> list[dict]:
     with closing(_conn()) as c, c:
         c.row_factory = sqlite3.Row
         rows = c.execute(
-            "SELECT uid, plataforma, titulo, preco, postada_em "
-            "FROM postadas ORDER BY postada_em DESC LIMIT ? OFFSET ?",
+            "SELECT h.uid, h.plataforma, h.titulo, h.preco, h.postada_em, h.texto, p.oferta_json "
+            "FROM postadas h LEFT JOIN publicacoes p ON p.uid = h.uid "
+            "ORDER BY h.postada_em DESC LIMIT ? OFFSET ?",
             (limit, offset),
         ).fetchall()
-    return [dict(row) for row in rows]
+    items = []
+    for row in rows:
+        item = dict(row)
+        antigo = item.pop("oferta_json")
+        if not item["texto"] and antigo:
+            try:
+                item["texto"] = montar_whatsapp(Oferta(**json.loads(antigo)))
+            except (TypeError, ValueError, KeyError):
+                pass
+        if not item["texto"]:
+            item["texto"] = "\n".join(filter(None, (
+                item["titulo"], preco_br(item["preco"]) if item["preco"] is not None else None,
+                item["plataforma"],
+            )))
+        items.append(item)
+    return items
 
 
 def preparar_entregas_whatsapp(
-    oferta: Oferta, destinos: list[str], validade_horas: int = 6
+    oferta: Oferta, destinos: list[str], validade_horas: int = 6,
+    nao_repetir_dias: int = 7,
 ) -> list[str]:
     destinos = list(dict.fromkeys(destino.strip() for destino in destinos if destino.strip()))
     if not destinos:
@@ -95,16 +115,31 @@ def preparar_entregas_whatsapp(
     with closing(_conn()) as c:
         c.execute("BEGIN IMMEDIATE")
         placeholders = ",".join("?" for _ in destinos)
-        existente = c.execute(
-            f"SELECT 1 FROM entregas WHERE uid = ? AND canal = 'whatsapp' "
-            f"AND destino IN ({placeholders}) LIMIT 1",
+        existentes = c.execute(
+            f"SELECT COALESCE(e.enviada_em, p.criada_em) AS referencia_em FROM entregas e "
+            f"JOIN publicacoes p ON p.uid = e.uid "
+            f"WHERE e.uid = ? AND e.canal = 'whatsapp' "
+            f"AND e.destino IN ({placeholders})",
             (oferta.uid, *destinos),
-        ).fetchone()
-        if existente:
-            c.commit()
-            return []
+        ).fetchall()
+        if existentes:
+            repeticao_recente = any(
+                agora - dt.datetime.fromisoformat(row["referencia_em"])
+                < dt.timedelta(days=nao_repetir_dias)
+                for row in existentes
+            )
+            pendencia = c.execute(
+                "SELECT 1 FROM entregas WHERE uid = ? AND canal = 'whatsapp' "
+                "AND status != 'sent' LIMIT 1", (oferta.uid,),
+            ).fetchone()
+            if repeticao_recente or pendencia:
+                c.commit()
+                return []
+            # Um novo ciclo substitui somente o estado operacional de entregas antigas.
+            c.execute("DELETE FROM entregas WHERE uid = ? AND canal = 'whatsapp'", (oferta.uid,))
         c.execute(
-            "INSERT OR IGNORE INTO publicacoes (uid, oferta_json, criada_em, expira_em) VALUES (?, ?, ?, ?)",
+            f"INSERT OR {'REPLACE' if existentes else 'IGNORE'} INTO publicacoes "
+            "(uid, oferta_json, criada_em, expira_em) VALUES (?, ?, ?, ?)",
             (oferta.uid, json.dumps(asdict(oferta), ensure_ascii=False),
              agora.isoformat(timespec="seconds"), expira.isoformat(timespec="seconds")),
         )

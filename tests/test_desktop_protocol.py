@@ -10,6 +10,11 @@ class DesktopProtocolTests(unittest.TestCase):
         with self.assertRaises(ProtocolError):
             parse_request('{"id":"1","command":"powershell","payload":{}}')
 
+    def test_respondedor_retirado_e_ofertas_preservadas(self):
+        with self.assertRaises(ProtocolError):
+            parse_request('{"id":"1","command":"autoresponder","payload":{"action":"start"}}')
+        self.assertEqual(parse_request('{"id":"2","command":"whatsapp_test","payload":{}}')["command"], "whatsapp_test")
+
     def test_remove_token_e_cookie(self):
         value = sanitize("token=123456789:ABCDEFGHIJK cookie=session-secret")
         self.assertNotIn("ABCDEFGHIJK", value)

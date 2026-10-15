@@ -159,7 +159,6 @@ impl Backend {
             "whatsapp_test",
             "get_pending_deliveries",
             "retry_delivery",
-            "autoresponder",
             "shutdown",
         ];
         if !ALLOWED.contains(&command.as_str()) {

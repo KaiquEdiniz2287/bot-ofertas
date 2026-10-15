@@ -1,9 +1,13 @@
 # Configuração do bot de ofertas (o que não é segredo fica aqui; segredos vão no .env)
 
 geral:
-  intervalo_minutos: 45        # de quanto em quanto tempo buscar ofertas novas
+  intervalo_minutos: 45        # compatibilidade: 0 desliga o ciclo automático; >0 usa a faixa abaixo
+  intervalo_ciclo_min_minutos: 40  # pausa mínima após cada ciclo
+  intervalo_ciclo_max_minutos: 60  # pausa máxima após cada ciclo (sorteio em segundos)
   max_posts_por_ciclo: 3       # máximo de ofertas postadas por ciclo
-  espacamento_segundos: 120    # pausa entre um post e outro no mesmo ciclo
+  espacamento_segundos: 120    # compatibilidade: 0 desliga a pausa; >0 usa a faixa abaixo
+  espacamento_min_segundos: 120   # 2 min entre ofertas
+  espacamento_max_segundos: 300   # 5 min entre ofertas (sorteio em segundos)
   nao_repetir_dias: 7          # não repostar o mesmo produto dentro desse prazo
   horario_ativo: "08:00-23:00" # só posta nesse intervalo (hora do PC); "" = 24h
 

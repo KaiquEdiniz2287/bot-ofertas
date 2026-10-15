@@ -1,5 +1,4 @@
-import {createState,appendLog,applyBackendState,startSessionAction,finishSessionAction} from "./state.mjs";
-import {mountResponder,refreshResponder} from "./autoresponder/app.js";
+import {createState,appendLog,applyBackendState,startSessionAction,finishSessionAction,runPlatformTests} from "./state.mjs";
 
 const {invoke}=window.__TAURI__.core,{listen}=window.__TAURI__.event;
 const $=selector=>document.querySelector(selector);
@@ -7,13 +6,13 @@ const pageInfo={
   overview:["Visão geral","Acompanhe a operação e a saúde do bot."],
   search:["Buscar produtos","Compare os melhores resultados afiliados de cada plataforma sem interromper o bot."],
   operation:["Operação","Execute e teste cada fonte com segurança."],
-  autoresponder:["Respostas automáticas","Posts prontos e regras para responder nos grupos."],
   settings:["Configurações","Credenciais e preferências ficam somente neste computador."],
   whatsapp:["WhatsApp","Conexão, grupo, Canal e envios que aguardam sua decisão."],
   history:["Histórico","Últimas ofertas registradas pelo bot."],
   console:["Console ao vivo","Eventos do backend em tempo real."],
 };
-let state=createState(),updateVersion="",updateReady=false,toastTimer,logFilter="all";
+let state=createState(),updateVersion="",updateReady=false,toastTimer,logFilter="all",batchRunning=false,batchIndex=0;
+const platformTests=["ml","shopee","amazon","aliexpress"];
 
 async function request(command,payload={}){
   try{return await invoke("backend_request",{command,payload})}
@@ -34,9 +33,10 @@ function formatPrice(value){return value==null?"—":new Intl.NumberFormat("pt-B
 function formatDate(value){if(!value)return"—";const date=new Date(value);return Number.isNaN(date.getTime())?String(value):date.toLocaleString("pt-BR",{dateStyle:"short",timeStyle:"short"})}
 function formatCountdown(value){if(!value)return"Sem agendamento";const seconds=Math.max(0,Math.ceil((new Date(value).getTime()-Date.now())/1000));if(!seconds)return"Agora";const hours=Math.floor(seconds/3600),minutes=Math.floor(seconds%3600/60),rest=seconds%60;return [hours&&`${hours}h`,(minutes||hours)&&`${minutes}min`,`${rest}s`].filter(Boolean).join(" ")}
 function formatDuration(seconds){const value=Math.max(0,Number(seconds)||0),minutes=Math.floor(value/60),rest=value%60;return minutes?`${minutes}min${rest?` ${rest}s`:""}`:`${rest}s`}
-function whatsappLabel(status){return ({CONNECTED:"Conectado",CONNECTING:"Conectando…",RECONNECTING:"Reconectando…",RECONNECT_FAILED:"Conexão manual necessária",AWAITING_QR:"Leia o QR Code",DISCONNECTED:"Desconectado",LOGGED_OUT:"Sessão removida"})[status]||status||"Desconectado"}
+function formatRange(range){return Array.isArray(range)&&range.length===2?`${formatDuration(range[0])} – ${formatDuration(range[1])}`:"—"}
+function whatsappLabel(status){if(status==="RECONNECTING"&&state.whatsappNetworkUnavailable)return"Aguardando rede";return ({CONNECTED:"Conectado",CONNECTING:"Conectando…",RECONNECTING:"Reconectando…",RECONNECT_FAILED:"Conexão manual necessária",AWAITING_QR:"Leia o QR Code",DISCONNECTED:"Desconectado",LOGGED_OUT:"Sessão removida"})[status]||status||"Desconectado"}
 function field(key,label,env,secret=false){const configured=env[key]==="__CONFIGURED__";return `<label class="field"><span>${label}${configured?'<b class="configured">Configurado</b>':""}</span><input name="${key}" type="${secret?"password":"text"}" value="${configured?"":escapeHtml(env[key])}" placeholder="${configured?"Preenchido — deixe vazio para manter":""}" autocomplete="off"></label>`}
-function visibleLogs(){return state.logs.filter(log=>{const source=String(log.source||"").toLowerCase();return logFilter==="all"||logFilter==="respostas"&&source.includes("respostas")||logFilter==="conexao"&&source.includes("whatsapp")||logFilter==="ofertas"&&!source.includes("whatsapp")&&!source.includes("respostas")})}
+function visibleLogs(){return state.logs.filter(log=>{const source=String(log.source||"").toLowerCase();return logFilter==="all"||logFilter==="conexao"&&source.includes("whatsapp")||logFilter==="ofertas"&&!source.includes("whatsapp")})}
 function logText(){return visibleLogs().map(log=>`${log.timestamp||""} ${log.level||"INFO"} ${log.source||""}: ${log.message||""}${log.count>1?` (repetido ${log.count}×)`:""}`).join("\n")}
 function brand(name,label,className=""){return `<img class="brand-logo ${className}" src="brands/${name}.svg" alt="${label}" title="${label}">`}
 function platformBrand(value){const key=String(value||"").toLowerCase();if(key.includes("mercado"))return brand("mercadolivre","Mercado Livre","tiny");if(key.includes("shopee"))return brand("shopee","Shopee","tiny");if(key.includes("amazon"))return brand("amazon","Amazon","tiny");if(key.includes("aliexpress"))return brand("aliexpress","AliExpress","tiny");return""}
@@ -53,13 +53,14 @@ const operationInfo={
 function timerStrip(compact=false){
   const reconnecting=state.whatsappStatus==="RECONNECTING"&&state.whatsappRetryAt;
   const operation=state.currentAction?.status==="running";
-  const nextCycle=compact?"":`<div class="timer-item"><small>Próximo ciclo</small><strong class="countdown" data-countdown="next">${state.cycleRunning?"Em andamento":formatCountdown(state.nextCycleAt)}</strong><span>${state.cycleIntervalMinutes?`intervalo de ${state.cycleIntervalMinutes} min`:"aguardando agendamento"}</span></div>`;
-  const whatsapp=compact?"":`<div class="timer-item ${reconnecting?"warning":""}"><small>${reconnecting?`WhatsApp · tentativa ${state.whatsappRetryAttempt}/${state.whatsappRetryMax}`:operation?"Operação atual":"WhatsApp"}</small><strong ${reconnecting?'class="countdown" data-countdown="whatsapp"':""}>${reconnecting?formatCountdown(state.whatsappRetryAt):operation?"Em andamento":whatsappLabel(state.whatsappStatus)}</strong><span>${reconnecting?"até reconectar":operation?escapeHtml(state.currentAction.label):"estado da conexão"}</span></div>`;
+  const cycleRule=state.cycleIntervalRangeSeconds?`Faixa ${formatRange(state.cycleIntervalRangeSeconds)}${state.cycleWaitSeconds?` · sorteado ${formatDuration(state.cycleWaitSeconds)}`:" após cada ciclo"}`:"Agendamento desativado";
+  const nextCycle=compact?"":`<div class="timer-item"><small>Próximo ciclo</small><strong class="countdown" data-countdown="next">${state.cycleRunning?"Em andamento":formatCountdown(state.nextCycleAt)}</strong><span>${cycleRule}</span></div>`;
+  const whatsapp=compact?"":`<div class="timer-item ${reconnecting?"warning":""}"><small>${reconnecting?state.whatsappNetworkUnavailable?"WhatsApp · sem rede":`WhatsApp · tentativa ${state.whatsappRetryAttempt}/${state.whatsappRetryMax}`:operation?"Operação atual":"WhatsApp"}</small><strong ${reconnecting?'class="countdown" data-countdown="whatsapp"':""}>${reconnecting?formatCountdown(state.whatsappRetryAt):operation?"Em andamento":whatsappLabel(state.whatsappStatus)}</strong><span>${reconnecting?state.whatsappNetworkUnavailable?"até verificar a rede":"até reconectar":operation?escapeHtml(state.currentAction.label):"estado da conexão"}</span></div>`;
   return `<section class="timer-strip ${compact?"compact":""}" aria-label="Temporizadores da operação">
     <div class="timer-title"><span>◷</span><div><small>TEMPOS DO BOT</small><strong>${state.pauseUntil?"Ciclo pausado":state.cycleRunning?"Ciclo em execução":state.botRunning?"Bot aguardando próximo ciclo":"Aguardando início"}</strong></div></div>
-    <div class="timer-item ${state.pauseUntil?"warning":""}"><small>Pausa atual</small><strong class="countdown" data-countdown="pause">${state.pauseUntil?formatCountdown(state.pauseUntil):"Sem pausa"}</strong><span>${state.pauseUntil?`retoma às ${new Date(state.pauseUntil).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})}`:"processamento liberado"}</span></div>
+    <div class="timer-item ${state.pauseUntil?"warning":""}"><small>${state.pauseKind==="ofertas"?"Pausa entre ofertas":state.pauseKind==="destinos"?"Pausa grupo → Canal":"Pausa atual"}</small><strong class="countdown" data-countdown="pause">${state.pauseUntil?formatCountdown(state.pauseUntil):"Sem pausa"}</strong><span>${state.pauseUntil?`${state.pauseDurationSeconds?`${state.pauseKind==="ofertas"?"Sorteado":"Intervalo"} ${formatDuration(state.pauseDurationSeconds)} · `:""}retoma às ${new Date(state.pauseUntil).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})}`:"processamento liberado"}</span></div>
     ${nextCycle}
-    <div class="timer-item"><small>Entre publicações</small><strong>${state.postSpacingSeconds?formatDuration(state.postSpacingSeconds):"—"}</strong><span>pausa de segurança</span></div>
+    <div class="timer-item"><small>Entre publicações</small><strong>${formatRange(state.postSpacingRangeSeconds)}</strong><span>${state.postSpacingRangeSeconds?"Sorteio em segundos a cada oferta":"Pausa desativada"}</span></div>
     ${whatsapp}
   </section>`;
 }
@@ -106,19 +107,14 @@ function render(){
   const toggle=$("#toggle");
   toggle.textContent=state.botRunning?"Parar bot":"Iniciar bot";
   toggle.className=state.botRunning?"button primary danger":"button primary";
-  toggle.disabled=!state.connected||state.actionRunning||(!state.botRunning&&!state.ready);
+  toggle.disabled=!state.connected||state.actionRunning||batchRunning||(!state.botRunning&&!state.ready);
 
   const content=$("#content");
-  if(state.page==="autoresponder"){
-    toggle.hidden=true;status.hidden=true;
-    mountResponder(content,request,toast,invoke);
-    return;
-  }
   toggle.hidden=false;status.hidden=false;
   const whatsappCanConnect=["DISCONNECTED","LOGGED_OUT","RECONNECT_FAILED"].includes(state.whatsappStatus);
   if(state.page==="overview"){
     const statusLabel=state.botRunning?"Em execução":state.ready?"Pronto":"Requer configuração";
-    content.innerHTML=`<div class="page-stack"><section class="hero-card dashboard-hero"><div><span class="eyebrow">CENTRAL DE AUTOMAÇÃO</span><h2>${state.botRunning?"Seu bot está trabalhando.":"Tudo sob seu controle."}</h2><p>${state.ready?"Execute o ciclo, acompanhe os canais e confira os próximos tempos sem sair desta tela.":"Complete Telegram e afiliados para começar a publicar ofertas."}</p><div class="channel-row"><span>${brand("telegram","Telegram","small")} Telegram <b class="${state.ready?"ok":""}">${state.ready?"configurado":"pendente"}</b></span><span>${brand("whatsapp","WhatsApp","small")} WhatsApp <b class="${state.whatsappStatus==="CONNECTED"?"ok":""}">${whatsappLabel(state.whatsappStatus)}</b></span></div></div><div class="hero-controls"><span class="hero-orb ${state.botRunning?"active":""}" aria-hidden="true">↗</span><button class="button primary cycle-button" data-action="cycle" ${state.actionRunning||!state.ready?"disabled":""}>${state.actionRunning?"Operação em andamento":"Executar ciclo agora"}</button><small>Pode publicar ofertas nos canais ativos.</small></div></section>${timerStrip(true)}<div class="metric-grid"><article class="metric-card"><span class="metric-icon">●</span><div><small>Estado atual</small><strong>${statusLabel}</strong></div></article><article class="metric-card"><span class="metric-icon">◷</span><div><small>Próximo ciclo</small><strong class="countdown" data-countdown="next">${formatCountdown(state.nextCycleAt)}</strong></div></article><article class="metric-card"><span class="metric-icon">!</span><div><small>Pendências manuais</small><strong>${state.pendingDeliveries||0}</strong></div></article><article class="metric-card wide"><span class="metric-icon">⌂</span><div><small>Diretório de dados</small><strong class="path">${escapeHtml(state.dataDir||"—")}</strong></div></article></div><section class="panel next-step"><div><span class="section-kicker">${state.pauseUntil?"PAUSA EM ANDAMENTO":"ACESSO RÁPIDO"}</span><h3>${state.pauseUntil?`Retomada em <span data-countdown="pause">${formatCountdown(state.pauseUntil)}</span>`:state.ready?"Valide as integrações quando precisar":"Finalize as credenciais essenciais"}</h3><p>${state.pauseUntil?`Horário previsto: ${formatDate(state.pauseUntil)}.`:state.ready?"Os testes e indicadores permanentes ficam reunidos na área Operação.":"Abra Configurações e preencha o token, o proprietário e o canal do Telegram."}</p></div><button class="button secondary" data-page-link="${state.pendingDeliveries?"whatsapp":state.ready?"operation":"settings"}">${state.pendingDeliveries?"Ver pendências":state.ready?"Ver operações":"Abrir configurações"} →</button></section></div>`;
+    content.innerHTML=`<div class="page-stack"><section class="hero-card dashboard-hero"><div><span class="eyebrow">CENTRAL DE AUTOMAÇÃO</span><h2>${state.botRunning?"Seu bot está trabalhando.":"Tudo sob seu controle."}</h2><p>${state.ready?"Execute o ciclo, acompanhe os canais e confira os próximos tempos sem sair desta tela.":"Complete Telegram e afiliados para começar a publicar ofertas."}</p><div class="channel-row"><span>${brand("telegram","Telegram","small")} Telegram <b class="${state.ready?"ok":""}">${state.ready?"configurado":"pendente"}</b></span><span>${brand("whatsapp","WhatsApp","small")} WhatsApp <b class="${state.whatsappStatus==="CONNECTED"?"ok":""}">${whatsappLabel(state.whatsappStatus)}</b></span></div></div><div class="hero-controls"><span class="hero-orb ${state.botRunning?"active":""}" aria-hidden="true">↗</span><button class="button primary cycle-button" data-action="cycle" ${state.actionRunning||!state.ready?"disabled":""}>${state.actionRunning?"Operação em andamento":"Executar ciclo agora"}</button><small>Pode publicar ofertas nos canais ativos.</small></div></section>${timerStrip(true)}<div class="metric-grid"><article class="metric-card"><span class="metric-icon">●</span><div><small>Estado atual</small><strong>${statusLabel}</strong></div></article><article class="metric-card"><span class="metric-icon">◷</span><div><small>Próximo ciclo</small><strong class="countdown" data-countdown="next">${formatCountdown(state.nextCycleAt)}</strong><span class="metric-detail">${state.cycleIntervalRangeSeconds?`Faixa ${formatRange(state.cycleIntervalRangeSeconds)}${state.cycleWaitSeconds?` · sorteado ${formatDuration(state.cycleWaitSeconds)}`:""}`:"Agendamento desativado"}</span></div></article><article class="metric-card"><span class="metric-icon">!</span><div><small>Pendências manuais</small><strong>${state.pendingDeliveries||0}</strong></div></article><article class="metric-card wide"><span class="metric-icon">⌂</span><div><small>Diretório de dados</small><strong class="path">${escapeHtml(state.dataDir||"—")}</strong></div></article></div><section class="panel next-step"><div><span class="section-kicker">${state.pauseUntil?"PAUSA EM ANDAMENTO":"ACESSO RÁPIDO"}</span><h3>${state.pauseUntil?`Retomada em <span data-countdown="pause">${formatCountdown(state.pauseUntil)}</span>`:state.ready?"Valide as integrações quando precisar":"Finalize as credenciais essenciais"}</h3><p>${state.pauseUntil?`Horário previsto: ${formatDate(state.pauseUntil)}.`:state.ready?"Os testes e indicadores permanentes ficam reunidos na área Operação.":"Abra Configurações e preencha o token, o proprietário e o canal do Telegram."}</p></div><button class="button secondary" data-page-link="${state.pendingDeliveries?"whatsapp":state.ready?"operation":"settings"}">${state.pendingDeliveries?"Ver pendências":state.ready?"Ver operações":"Abrir configurações"} →</button></section></div>`;
   }
   if(state.page==="search"){
     const search=state.productSearch;
@@ -127,20 +123,35 @@ function render(){
     content.innerHTML=`<div class="page-stack search-page"><section class="search-hero"><div><span class="section-kicker">PESQUISA AVULSA</span><h2>Encontre ofertas prontas para compartilhar</h2><p>A pesquisa acontece separada do ciclo automático: não publica, não entra no histórico e não pausa o bot.</p></div><form id="product-search-form" class="search-box"><label for="product-query">Qual produto você procura?</label><div><input id="product-query" name="query" value="${escapeHtml(search.query)}" placeholder="Ex.: fone bluetooth, air fryer, notebook…" minlength="2" autocomplete="off" required><button class="button primary" type="submit" ${search.loading?"disabled":""}>${search.loading?"Pesquisando…":"Pesquisar"}</button></div><small>Consultaremos simultaneamente as plataformas ativas.</small></form></section>${search.loading?`<section class="search-loading"><i></i><div><strong>Procurando as melhores opções…</strong><span>Você pode deixar o bot funcionando normalmente.</span></div></section>`:""}${!search.loading&&search.searched?`<div class="search-summary"><div><span class="section-kicker">RESULTADOS</span><h2>${search.results.length?`${search.results.length} oferta(s) pronta(s) para copiar`:"Nenhuma oferta pronta"}</h2></div><span>Pesquisa: <strong>${escapeHtml(search.query)}</strong></span></div><div class="search-results">${cards}</div>${errors}`:`<section class="search-empty"><span>⌕</span><h3>Uma busca, as melhores opções</h3><p>Digite o produto para receber até três resultados de Mercado Livre, Shopee, Amazon e AliExpress.</p></section>`}</div>`;
   }
   if(state.page==="operation"){
-    const disabled=state.actionRunning?"disabled":"";
+    const busy=state.actionRunning||batchRunning,disabled=busy?"disabled":"";
     const current=state.currentAction,status=current?.status||"idle";
-    content.innerHTML=`<div class="page-stack"><section class="operation-feedback ${status}"><span class="feedback-icon">${status==="running"?"◷":status==="success"?"✓":status==="error"?"!":"i"}</span><div><small>INFORMAÇÕES DA OPERAÇÃO</small><strong>${current?escapeHtml(current.label):"Pronto para executar uma verificação"}</strong><p>${current?escapeHtml(current.message):"Escolha uma ação abaixo. O andamento e o resultado serão explicados aqui, sem exigir que você abra o console."}</p></div>${current?.finishedAt?`<time>${new Date(current.finishedAt).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})}</time>`:""}</section><section class="panel"><div class="section-head"><div><span class="section-kicker">VERIFICAÇÕES E PREPARO</span><h2>Operações por plataforma</h2><p>Indicadores “Pronto” são verificados no computador; testes concluídos valem apenas nesta sessão do aplicativo.</p></div><span class="operation-state ${state.actionRunning?"busy":""}">${state.actionRunning?"Em andamento":"Disponível"}</span></div><div class="action-grid"><button class="action-card ${state.sessionActions.ml?"completed":""}" data-action="ml" ${disabled}><span class="action-icon logo">${brand("mercadolivre","Mercado Livre")}</span><span><strong>Testar Mercado Livre</strong><small>Valida busca e extração de ofertas.</small>${actionBadge("ml")}</span><b>${state.sessionActions.ml?"✓":"→"}</b></button><button class="action-card ${state.sessionActions.shopee?"completed":""}" data-action="shopee" ${disabled}><span class="action-icon logo">${brand("shopee","Shopee")}</span><span><strong>Testar Shopee</strong><small>Consulta a integração e retorna até 10 ofertas.</small>${actionBadge("shopee")}</span><b>${state.sessionActions.shopee?"✓":"→"}</b></button><button class="action-card ${state.sessionActions.amazon?"completed":""}" data-action="amazon" ${disabled}><span class="action-icon logo">${brand("amazon","Amazon")}</span><span><strong>Testar Amazon</strong><small>Verifica credenciais e busca automática.</small>${actionBadge("amazon")}</span><b>${state.sessionActions.amazon?"✓":"→"}</b></button><button class="action-card ${state.mlSessionDetected?"completed":""}" data-action="login" ${disabled}><span class="action-icon logo">${brand("mercadolivre","Mercado Livre")}</span><span><strong>Login Mercado Livre</strong><small>${state.mlSessionDetected?"Perfil local detectado; abra novamente se a sessão expirar.":"Abre a sessão local necessária ao Linkbuilder."}</small>${actionBadge("login",state.mlSessionDetected)}</span><b>${state.mlSessionDetected?"✓":"→"}</b></button><button class="action-card ${state.browserInstalled?"completed":""}" data-action="browser" ${disabled}><span class="action-icon logo">${brand("chrome","Chromium")}</span><span><strong>Instalar navegador</strong><small>${state.browserInstalled?"Chromium detectado no diretório de dados.":"Prepara o Chromium usado pelas automações."}</small>${actionBadge("browser",state.browserInstalled)}</span><b>${state.browserInstalled?"✓":"→"}</b></button></div></section></div>`;
-    content.querySelector(".action-grid")?.insertAdjacentHTML("beforeend",`<button class="action-card ${state.sessionActions.aliexpress?"completed":""}" data-action="aliexpress" ${disabled}><span class="action-icon logo">${brand("aliexpress","AliExpress")}</span><span><strong>Testar AliExpress</strong><small>Valida ofertas em BRL e links de afiliado.</small>${actionBadge("aliexpress")}</span><b>${state.sessionActions.aliexpress?"✓":"→"}</b></button>`);
+    content.innerHTML=`<div class="page-stack">
+      <section class="operation-feedback ${status}"><span class="feedback-icon">${status==="running"?"◷":status==="success"?"✓":status==="error"?"!":"i"}</span><div><small>INFORMAÇÕES DA OPERAÇÃO</small><strong>${current?escapeHtml(current.label):"Pronto para executar uma verificação"}${batchRunning&&batchIndex?` · ${batchIndex}/${platformTests.length}`:""}</strong><p>${current?escapeHtml(current.message):"Escolha uma ação abaixo. O andamento e o resultado serão explicados aqui, sem exigir que você abra o console."}</p></div>${current?.finishedAt?`<time>${new Date(current.finishedAt).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})}</time>`:""}</section>
+      <section class="panel"><div class="section-head"><div><span class="section-kicker">TESTES DAS PLATAFORMAS</span><h2>Verificar fontes de ofertas</h2><p>Os testes concluídos ficam marcados somente nesta sessão. Nenhum teste publica ofertas.</p></div><div class="toolbar-actions"><span class="operation-state ${busy?"busy":""}">${busy?"Em andamento":"Disponível"}</span><button class="button secondary" data-action="test-all" ${disabled}>${batchRunning?batchIndex?`Testando ${batchIndex} de ${platformTests.length}…`:"Iniciando testes…":"Testar todas em sequência"}</button></div></div>
+        <div class="action-grid">
+          <button class="action-card ${state.sessionActions.ml?"completed":""}" data-action="ml" ${disabled}><span class="action-icon logo">${brand("mercadolivre","Mercado Livre")}</span><span><strong>Testar Mercado Livre</strong><small>Valida busca e extração de ofertas.</small>${actionBadge("ml")}</span><b>${state.sessionActions.ml?"✓":"→"}</b></button>
+          <button class="action-card ${state.sessionActions.shopee?"completed":""}" data-action="shopee" ${disabled}><span class="action-icon logo">${brand("shopee","Shopee")}</span><span><strong>Testar Shopee</strong><small>Consulta a integração e retorna até 10 ofertas.</small>${actionBadge("shopee")}</span><b>${state.sessionActions.shopee?"✓":"→"}</b></button>
+          <button class="action-card ${state.sessionActions.amazon?"completed":""}" data-action="amazon" ${disabled}><span class="action-icon logo">${brand("amazon","Amazon")}</span><span><strong>Testar Amazon</strong><small>Verifica credenciais e busca automática.</small>${actionBadge("amazon")}</span><b>${state.sessionActions.amazon?"✓":"→"}</b></button>
+          <button class="action-card ${state.sessionActions.aliexpress?"completed":""}" data-action="aliexpress" ${disabled}><span class="action-icon logo">${brand("aliexpress","AliExpress")}</span><span><strong>Testar AliExpress</strong><small>Valida ofertas em BRL e links de afiliado.</small>${actionBadge("aliexpress")}</span><b>${state.sessionActions.aliexpress?"✓":"→"}</b></button>
+        </div>
+      </section>
+      <section class="panel"><div class="section-head"><div><span class="section-kicker">PREPARAÇÃO DO AMBIENTE</span><h2>Acesso e navegador</h2><p>Use estas ferramentas quando precisar preparar ou renovar o acesso do Mercado Livre.</p></div></div>
+        <div class="action-grid">
+          <button class="action-card ${state.mlSessionDetected?"completed":""}" data-action="login" ${disabled}><span class="action-icon logo">${brand("mercadolivre","Mercado Livre")}</span><span><strong>Login Mercado Livre</strong><small>${state.mlSessionDetected?"Perfil local detectado; abra novamente se a sessão expirar.":"Abre a sessão local necessária ao Linkbuilder."}</small>${actionBadge("login",state.mlSessionDetected)}</span><b>${state.mlSessionDetected?"✓":"→"}</b></button>
+          <button class="action-card ${state.browserInstalled?"completed":""}" data-action="browser" ${disabled}><span class="action-icon logo">${brand("chrome","Chromium")}</span><span><strong>Instalar navegador</strong><small>${state.browserInstalled?"Chromium detectado no diretório de dados.":"Prepara o Chromium usado pelas automações."}</small>${actionBadge("browser",state.browserInstalled)}</span><b>${state.browserInstalled?"✓":"→"}</b></button>
+        </div>
+      </section>
+    </div>`;
   }
   if(state.page==="console"){
-    content.innerHTML=`<div class="page-stack console-page">${timerStrip()}<section class="console-panel"><div class="console-toolbar"><div><span class="section-kicker">BACKEND</span><h2>Eventos em tempo real <b id="log-count" class="count-badge">${visibleLogs().length}</b></h2><p>O console mantém sua posição enquanto novos eventos chegam.</p></div><div class="toolbar-actions"><label class="log-filter-label">Origem <select id="log-filter"><option value="all" ${logFilter==="all"?"selected":""}>Todos</option><option value="ofertas" ${logFilter==="ofertas"?"selected":""}>Ofertas</option><option value="respostas" ${logFilter==="respostas"?"selected":""}>Respostas</option><option value="conexao" ${logFilter==="conexao"?"selected":""}>Conexão</option></select></label><button class="button ghost" data-action="clear">Limpar</button><button class="button secondary" data-action="export">Copiar diagnóstico</button></div></div><div class="log" id="live-log" role="log" aria-live="polite"></div><footer class="console-footer"><span><i></i> ${state.connected?"Conectado ao backend local":"Backend desconectado"}</span><span>Erros consecutivos iguais são agrupados</span></footer></section></div>`;
+    content.innerHTML=`<div class="page-stack console-page">${timerStrip()}<section class="console-panel"><div class="console-toolbar"><div><span class="section-kicker">BACKEND</span><h2>Eventos em tempo real <b id="log-count" class="count-badge">${visibleLogs().length}</b></h2><p>O console mantém sua posição enquanto novos eventos chegam.</p></div><div class="toolbar-actions"><label class="log-filter-label">Origem <select id="log-filter"><option value="all" ${logFilter==="all"?"selected":""}>Todos</option><option value="ofertas" ${logFilter==="ofertas"?"selected":""}>Ofertas</option><option value="conexao" ${logFilter==="conexao"?"selected":""}>Conexão</option></select></label><button class="button ghost" data-action="clear">Limpar</button><button class="button secondary" data-action="export">Copiar diagnóstico</button></div></div><div class="log" id="live-log" role="log" aria-live="polite"></div><footer class="console-footer"><span><i></i> ${state.connected?"Conectado ao backend local":"Backend desconectado"}</span><span>Erros consecutivos iguais são agrupados</span></footer></section></div>`;
   }
   if(state.page==="history"){
-    content.innerHTML=`<section class="panel"><div class="section-head"><div><span class="section-kicker">REGISTROS</span><h2>Ofertas publicadas</h2><p>Mostrando os ${state.history.length} registros mais recentes carregados.</p></div></div><div class="table-wrap"><table><thead><tr><th>Plataforma</th><th>Oferta</th><th>Preço</th><th>Publicada em</th></tr></thead><tbody>${state.history.length?state.history.map(item=>`<tr><td><span class="platform-tag">${platformBrand(item.plataforma)}${escapeHtml(item.plataforma)}</span></td><td>${escapeHtml(item.titulo)}</td><td><strong>${formatPrice(item.preco)}</strong></td><td>${escapeHtml(formatDate(item.postada_em))}</td></tr>`).join(""):'<tr><td class="empty" colspan="4">Nenhuma oferta registrada até agora.</td></tr>'}</tbody></table></div></section>`;
+    content.innerHTML=`<section class="panel"><div class="section-head"><div><span class="section-kicker">REGISTROS</span><h2>Ofertas publicadas</h2><p>Mostrando os ${state.history.length} registros mais recentes. A lista atualiza automaticamente.</p></div></div><div class="table-wrap"><table><thead><tr><th>Plataforma</th><th>Oferta</th><th>Preço</th><th>Publicada em</th><th>Ação</th></tr></thead><tbody>${state.history.length?state.history.map((item,index)=>`<tr><td><span class="platform-tag">${platformBrand(item.plataforma)}${escapeHtml(item.plataforma)}</span></td><td>${escapeHtml(item.titulo)}</td><td><strong>${formatPrice(item.preco)}</strong></td><td>${escapeHtml(formatDate(item.postada_em))}</td><td><button class="button ghost history-copy" type="button" data-copy-history="${index}" aria-label="Copiar oferta: ${escapeHtml(item.titulo)}">Copiar</button></td></tr>`).join(""):'<tr><td class="empty" colspan="5">Nenhuma oferta registrada até agora.</td></tr>'}</tbody></table></div></section>`;
   }
   if(state.page==="whatsapp"){
     const connected=state.whatsappStatus==="CONNECTED";
-    content.innerHTML=`<div class="page-stack"><section class="panel"><div class="section-head"><div class="branded-heading">${brand("whatsapp","WhatsApp","heading")}<div><span class="section-kicker">CONEXÃO LOCAL</span><h2>WhatsApp Business</h2><p>A sessão fica somente neste computador. Reconectar nunca dispara ofertas pendentes.</p></div></div><span class="operation-state ${connected?"":"busy"}">${whatsappLabel(state.whatsappStatus)}</span></div>${state.whatsappStatus==="RECONNECTING"?`<div class="reconnect-notice">Nova tentativa ${state.whatsappRetryAttempt||1} de ${state.whatsappRetryMax||5} em <strong data-countdown="whatsapp">${formatCountdown(state.whatsappRetryAt)}</strong>.</div>`:""}<div class="whatsapp-actions"><button class="button primary" data-action="wconnect" ${whatsappCanConnect?"":"disabled"}>${whatsappCanConnect?"Conectar WhatsApp":whatsappLabel(state.whatsappStatus)}</button><button class="button secondary" data-action="wgroups" ${connected?"":"disabled"}>Atualizar grupos</button><button class="button ghost" data-action="wlogout">Remover sessão</button>${state.whatsappAccount?`<span class="account-label">Conta ${escapeHtml(state.whatsappAccount)}</span>`:""}</div>${state.whatsappQr?`<div class="qr-panel"><img src="${state.whatsappQr}" alt="QR Code para conectar o WhatsApp"><div><h3>Leia o QR Code</h3><p>No WhatsApp Business, abra <strong>Aparelhos conectados</strong> e escolha <strong>Conectar um aparelho</strong>.</p></div></div>`:""}</section><section class="panel"><div class="section-head"><div><span class="section-kicker">FILA MANUAL</span><h2>Ofertas pendentes</h2><p>O bot apenas informa as pendências. Cada reenvio depende do seu clique.</p></div><button class="button secondary" data-action="wpending">Atualizar lista</button></div><div class="pending-list">${state.pending.length?state.pending.map(item=>`<article class="pending-item"><div><strong>${escapeHtml(item.title)}</strong><small>${item.destination.endsWith("@newsletter")?"Canal":"Grupo"} · criada em ${escapeHtml(formatDate(item.createdAt))} · expira em ${escapeHtml(formatDate(item.expiresAt))}</small>${item.lastError?`<em>${escapeHtml(item.lastError)}</em>`:""}</div><span>${item.attempts}/5 tentativa(s)</span><button class="button primary" data-retry-uid="${escapeHtml(item.uid)}" data-retry-destination="${escapeHtml(item.destination)}" ${connected?"":"disabled"}>Enviar agora</button></article>`).join(""):'<div class="empty-state">Nenhuma oferta aguardando envio manual.</div>'}</div></section></div>`;
+    content.innerHTML=`<div class="page-stack"><section class="panel"><div class="section-head"><div class="branded-heading">${brand("whatsapp","WhatsApp","heading")}<div><span class="section-kicker">CONEXÃO LOCAL</span><h2>WhatsApp Business</h2><p>A sessão fica somente neste computador. Reconectar nunca dispara ofertas pendentes.</p></div></div><span class="operation-state ${connected?"":"busy"}">${whatsappLabel(state.whatsappStatus)}</span></div>${state.whatsappStatus==="RECONNECTING"?`<div class="reconnect-notice">${state.whatsappNetworkUnavailable?"Rede ou DNS indisponível. Nova verificação em":"Nova tentativa " + (state.whatsappRetryAttempt||1) + " de " + (state.whatsappRetryMax||5) + " em"} <strong data-countdown="whatsapp">${formatCountdown(state.whatsappRetryAt)}</strong>.</div>`:""}<div class="whatsapp-actions"><button class="button primary" data-action="wconnect" ${whatsappCanConnect?"":"disabled"}>${whatsappCanConnect?"Conectar WhatsApp":whatsappLabel(state.whatsappStatus)}</button><button class="button secondary" data-action="wgroups" ${connected?"":"disabled"}>Atualizar grupos</button><button class="button ghost" data-action="wlogout">Remover sessão</button>${state.whatsappAccount?`<span class="account-label">Conta ${escapeHtml(state.whatsappAccount)}</span>`:""}</div>${state.whatsappQr?`<div class="qr-panel"><img src="${state.whatsappQr}" alt="QR Code para conectar o WhatsApp"><div><h3>Leia o QR Code</h3><p>No WhatsApp Business, abra <strong>Aparelhos conectados</strong> e escolha <strong>Conectar um aparelho</strong>.</p></div></div>`:""}</section><section class="panel"><div class="section-head"><div><span class="section-kicker">FILA MANUAL</span><h2>Ofertas pendentes</h2><p>O bot apenas informa as pendências. Cada reenvio depende do seu clique.</p></div><button class="button secondary" data-action="wpending">Atualizar lista</button></div><div class="pending-list">${state.pending.length?state.pending.map(item=>`<article class="pending-item"><div><strong>${escapeHtml(item.title)}</strong><small>${item.destination.endsWith("@newsletter")?"Canal":"Grupo"} · criada em ${escapeHtml(formatDate(item.createdAt))} · expira em ${escapeHtml(formatDate(item.expiresAt))}</small>${item.lastError?`<em>${escapeHtml(item.lastError)}</em>`:""}</div><span>${item.attempts}/5 tentativa(s)</span><button class="button primary" data-retry-uid="${escapeHtml(item.uid)}" data-retry-destination="${escapeHtml(item.destination)}" ${connected?"":"disabled"}>Enviar agora</button></article>`).join(""):'<div class="empty-state">Nenhuma oferta aguardando envio manual.</div>'}</div></section></div>`;
   }
   if(state.page==="settings"){
     const env=state.settings?.env||{},preferences=state.settings?.preferences||{};
@@ -165,6 +176,7 @@ function bind(){
   document.querySelectorAll("[data-retry-uid]").forEach(button=>button.onclick=()=>retryDelivery(button));
   const searchForm=$("#product-search-form");if(searchForm)searchForm.onsubmit=searchProducts;
   document.querySelectorAll("[data-copy-result]").forEach(button=>button.onclick=()=>copySearchResult(button));
+  document.querySelectorAll("[data-copy-history]").forEach(button=>button.onclick=()=>copyHistoryItem(button));
 }
 
 function updateCategorySummary(){
@@ -173,7 +185,20 @@ function updateCategorySummary(){
   summary.textContent=count?`${count} categoria(s) selecionada(s)`:"Todas as categorias";
 }
 
-function navigate(page){state={...state,page};window.scrollTo(0,0);render()}
+function navigate(page){state={...state,page};window.scrollTo(0,0);render();if(page==="history")void refreshHistory()}
+
+let historyLoading=false;
+async function refreshHistory(){
+  if(historyLoading)return;
+  historyLoading=true;
+  try{
+    const items=(await invoke("backend_request",{command:"get_history",payload:{limit:100,offset:0}})).items||[];
+    if(JSON.stringify(items)!==JSON.stringify(state.history)){
+      state={...state,history:items};
+      if(state.page==="history")render();
+    }
+  }catch{}finally{historyLoading=false}
+}
 
 async function refreshStatus(){
   try{state=applyBackendState(state,await invoke("backend_request",{command:"get_status",payload:{}}))}
@@ -199,13 +224,41 @@ async function action(name){
   if(name==="wlogout"){if(confirm("Remover a sessão local do WhatsApp deste computador?")){try{await request("whatsapp_logout");state={...state,whatsappQr:"",whatsappGroups:[]};render()}catch{}}return}
   if(name==="wpending"){try{state={...state,pending:(await request("get_pending_deliveries")).items||[]};render()}catch{}return}
   if(name==="cycle"&&!confirm("Este ciclo pode publicar ofertas no canal. Continuar?"))return;
+  if(name==="test-all"){
+    if(state.actionRunning||batchRunning)return;
+    batchRunning=true;batchIndex=0;
+    state=startSessionAction(state,"test-all","Testes das plataformas","Iniciando verificações individuais…");render();
+    let passed=0,finished=0,interrupted=false;
+    const failedNames=[];
+    try{
+      await runPlatformTests(platformTests,async(source,index)=>{
+        batchIndex=index;
+        const ok=await action(source);
+        finished++;
+        if(ok)passed++;
+        else failedNames.push(operationInfo[source].label.replace("Teste ", ""));
+        return ok;
+      });
+    }catch(error){interrupted=true;toast(`A sequência foi interrompida: ${String(error)}`,true)}
+    finally{
+      batchRunning=false;batchIndex=0;
+      const failed=finished-passed;
+      const message=interrupted?`Sequência interrompida após ${finished} de ${platformTests.length} testes.`:failed?`${passed} de ${finished} testes passaram. Falharam: ${failedNames.join(", ")}.`:`Todos os ${finished} testes passaram nesta sessão.`;
+      state={...state,currentAction:{key:"test-all",label:"Testes das plataformas",status:failed||interrupted?"error":"success",message,finishedAt:Date.now()}};
+      render();
+      if(!interrupted)toast(message,failed>0);
+    }
+    return;
+  }
   const commands={cycle:["run_cycle",{confirmed:true}],ml:["test_source",{source:"ml"}],shopee:["test_source",{source:"shopee"}],amazon:["test_source",{source:"amazon"}],aliexpress:["test_source",{source:"aliexpress"}],login:["start_ml_login",{}],browser:["install_browser",{}]};
   const command=commands[name];if(!command)return;
   const info=operationInfo[name];
   state=startSessionAction({...state,actionRunning:true},name,info.label,info.running);render();
-  try{await request(...command);state=finishSessionAction(state,name,true,info.success);toast(info.success)}
+  let succeeded=false;
+  try{await request(...command);succeeded=true;state=finishSessionAction(state,name,true,info.success);if(!batchRunning)toast(info.success)}
   catch(error){state=finishSessionAction(state,name,false,`Não foi possível concluir: ${String(error)}`)}
   finally{await refreshStatus();render()}
+  return succeeded;
 }
 
 function captureSettingsDraft(){
@@ -243,6 +296,13 @@ async function copySearchResult(button){
   catch{toast("Não foi possível copiar o texto.",true)}
 }
 
+async function copyHistoryItem(button){
+  const item=state.history[Number(button.dataset.copyHistory)];
+  if(!item)return;
+  try{await navigator.clipboard.writeText(item.texto);button.textContent="✓ Copiado";toast("Oferta copiada.");setTimeout(()=>{if(button.isConnected)button.textContent="Copiar"},1800)}
+  catch{toast("Não foi possível copiar a oferta.",true)}
+}
+
 async function saveSettings(event){
   event.preventDefault();
   const button=event.submitter,data=new FormData(event.target),env={};
@@ -265,7 +325,7 @@ document.querySelectorAll(".sidebar nav button").forEach(button=>button.onclick=
 $("#toggle").onclick=async()=>{const command=state.botRunning?"stop_bot":"start_bot";state={...state,actionRunning:true};render();try{await request(command)}catch{}finally{await refreshStatus();render()}};
 await listen("backend://log",event=>{state=appendLog(state,event.payload);if(state.page==="console")updateLogView()});
 await listen("backend://state",event=>{captureSettingsDraft();state=applyBackendState(state,event.payload.state||event.payload);render()});
-await listen("backend://event",event=>{const payload=event.payload||{};if(payload.type==="autoresponder"){refreshResponder();return}if(payload.type!=="whatsapp")return;captureSettingsDraft();if(payload.event==="qr")state={...state,whatsappQr:payload.dataUrl||""};if(payload.event==="connection_state"){state={...state,whatsappStatus:payload.status||"DISCONNECTED",whatsappRetryAt:payload.retryAt||null,whatsappRetryAttempt:Number(payload.attempt)||0,whatsappRetryMax:Number(payload.maxAttempts)||5};if(payload.status==="CONNECTED"){state.whatsappQr="";state.whatsappRetryAt=null;state.whatsappRetryAttempt=0}}if(payload.event==="account")state={...state,whatsappAccount:payload.number||""};render()});
+await listen("backend://event",event=>{const payload=event.payload||{};if(payload.type!=="whatsapp")return;captureSettingsDraft();if(payload.event==="qr")state={...state,whatsappQr:payload.dataUrl||""};if(payload.event==="connection_state"){state={...state,whatsappStatus:payload.status||"DISCONNECTED",whatsappRetryAt:payload.retryAt||null,whatsappRetryAttempt:Number(payload.attempt)||0,whatsappRetryMax:Number(payload.maxAttempts)||5,whatsappNetworkUnavailable:Boolean(payload.networkUnavailable)};if(payload.status==="CONNECTED"){state.whatsappQr="";state.whatsappRetryAt=null;state.whatsappRetryAttempt=0}}if(payload.event==="account")state={...state,whatsappAccount:payload.number||""};render()});
 
 function showUpdate(){$("#update-title").textContent=updateReady?"Atualização pronta!":`Nova versão ${updateVersion} disponível`;$("#update-subtitle").textContent=updateReady?"Reinicie para aplicar a nova versão.":"Deseja baixar e instalar agora?";$("#update-progress-wrap").classList.add("hidden");$("#update-percent").textContent="";$("#update-actions").classList.remove("hidden");$("#update-now").classList.toggle("hidden",updateReady);$("#update-restart").classList.toggle("hidden",!updateReady);$("#update-later").disabled=false;$("#update-overlay").classList.remove("hidden")}
 function showUpdateError(message){$("#update-title").textContent="Não foi possível atualizar";$("#update-subtitle").textContent=String(message);$("#update-progress-wrap").classList.add("hidden");$("#update-percent").textContent="";$("#update-actions").classList.remove("hidden");$("#update-now").classList.remove("hidden");$("#update-now").disabled=false;$("#update-now").textContent="Tentar novamente";$("#update-restart").classList.add("hidden");$("#update-later").disabled=false}
@@ -281,4 +341,5 @@ $("#update-restart").onclick=()=>invoke("restart_app");
 try{state=applyBackendState(state,await request("get_status"));state.settings=await request("get_settings");state.history=(await request("get_history",{limit:100,offset:0})).items;state.pending=(await request("get_pending_deliveries")).items||[];$("#app-version").textContent=`Versão ${await invoke("get_app_version")}`}catch{}
 render();
   setInterval(()=>{document.querySelectorAll('[data-countdown="next"]').forEach(element=>element.textContent=state.cycleRunning?"Em andamento":formatCountdown(state.nextCycleAt));document.querySelectorAll('[data-countdown="pause"]').forEach(element=>element.textContent=state.pauseUntil?formatCountdown(state.pauseUntil):"Sem pausa");document.querySelectorAll('[data-countdown="whatsapp"]').forEach(element=>element.textContent=formatCountdown(state.whatsappRetryAt))},1000);
+setInterval(()=>{if(state.page==="history")void refreshHistory()},3000);
 setTimeout(()=>invoke("check_for_updates").catch(error=>console.warn("Atualização:",error)),3000);
