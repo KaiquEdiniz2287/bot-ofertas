@@ -1,11 +1,39 @@
 import unittest
 from unittest.mock import Mock, patch
 
+import requests
+
 from ofertas.models import Oferta
 from ofertas.sources import aliexpress
 
 
 class AliExpressTests(unittest.TestCase):
+    def test_busca_manual_repete_uma_vez_apos_falha_de_dns(self):
+        with patch.object(aliexpress.config, "aliexpress_tracking_id", "tracking"), patch.object(
+            aliexpress, "_chamar", side_effect=[requests.exceptions.ConnectionError("DNS"), {}]
+        ) as call, patch.object(aliexpress.time, "sleep") as sleep:
+            self.assertEqual(aliexpress.buscar_produtos("fone blue"), [])
+        self.assertEqual(call.call_count, 2)
+        sleep.assert_called_once_with(2)
+
+    def test_busca_manual_exibe_erro_de_rede_sem_traceback_tecnico(self):
+        with patch.object(aliexpress.config, "aliexpress_tracking_id", "tracking"), patch.object(
+            aliexpress, "_chamar", side_effect=requests.exceptions.ConnectionError("DNS")
+        ), patch.object(aliexpress.time, "sleep"):
+            with self.assertRaisesRegex(RuntimeError, "falha de rede ou DNS"):
+                aliexpress.buscar_produtos("fone blue")
+
+    def test_busca_manual_trata_resposta_vazia_sem_ocultar_outros_erros(self):
+        with patch.object(aliexpress.config, "aliexpress_tracking_id", "tracking"), patch.object(
+            aliexpress, "_chamar", side_effect=RuntimeError("AliExpress API respondeu 405: The result is empty")
+        ):
+            self.assertEqual(aliexpress.buscar_produtos("bermuda tactel"), [])
+        with patch.object(aliexpress.config, "aliexpress_tracking_id", "tracking"), patch.object(
+            aliexpress, "_chamar", side_effect=RuntimeError("AliExpress API recusou a chamada: permissão")
+        ):
+            with self.assertRaisesRegex(RuntimeError, "permissão"):
+                aliexpress.buscar_produtos("bermuda tactel")
+
     def test_assinatura_top_e_deterministica(self):
         params = {"method": "aliexpress.affiliate.product.query", "app_key": "123", "v": "2.0"}
         self.assertEqual(

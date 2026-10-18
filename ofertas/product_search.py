@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import unicodedata
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict
@@ -21,6 +22,7 @@ _LABELS = {
     "aliexpress": "AliExpress",
 }
 RESULTS_PER_SOURCE = 3
+_IGNORAR_BUSCA = {"a", "as", "com", "da", "das", "de", "do", "dos", "e", "em", "kit", "o", "os", "para", "por", "um", "uma"}
 
 
 def _normalizar(value: str) -> str:
@@ -54,6 +56,12 @@ def _melhor(ofertas: list[Oferta], termo: str) -> Oferta | None:
     return melhores[0] if melhores else None
 
 
+def _termos_busca(termo: str) -> list[str]:
+    palavras = [p for p in re.findall(r"\w+", termo) if len(p) > 2 and _normalizar(p) not in _IGNORAR_BUSCA]
+    resumido = " ".join(palavras[:min(4, len(palavras) - 1)])
+    return [termo, resumido] if len(palavras) >= 3 and _normalizar(resumido) != _normalizar(termo) else [termo]
+
+
 def _buscar_fonte(key: str, termo: str) -> list[Oferta]:
     functions = {
         "mercadolivre": mercadolivre.buscar_produtos,
@@ -61,13 +69,26 @@ def _buscar_fonte(key: str, termo: str) -> list[Oferta]:
         "amazon": amazon.buscar_produtos,
         "aliexpress": aliexpress.buscar_produtos,
     }
-    offers = _melhores(functions[key](termo, 10), termo)
+    offers = []
+    consultas = _termos_busca(termo)
+    for index, consulta in enumerate(consultas):
+        offers = functions[key](consulta, 10)
+        if offers:
+            break
+        if index + 1 < len(consultas):
+            log.info("Busca manual no %s: tentando termo reduzido '%s'.", _LABELS[key], consultas[index + 1])
+    offers = _melhores(offers, termo)
     if not offers:
         return []
     if offers and key == "mercadolivre":
         mercadolivre.gerar_links_afiliado(offers)
     if offers and key == "aliexpress":
-        aliexpress.gerar_links_afiliado(offers)
+        try:
+            aliexpress.gerar_links_afiliado(offers)
+        except Exception as exc:
+            if not all(offer.url_afiliado for offer in offers):
+                raise
+            log.warning("AliExpress não encurtou os links; usando os links afiliados retornados pela busca: %s", exc)
     offers = [offer for offer in offers if offer.url_afiliado]
     if not offers:
         raise RuntimeError("a plataforma não devolveu um link de afiliado para o produto")

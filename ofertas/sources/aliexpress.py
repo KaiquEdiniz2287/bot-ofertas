@@ -180,10 +180,22 @@ def buscar_produtos(termo: str, limite: int = 10) -> list[Oferta]:
         return []
     if not config.aliexpress_tracking_id:
         raise RuntimeError("Configure ALIEXPRESS_TRACKING_ID para gerar links de afiliado.")
-    result = _chamar(
-        "aliexpress.affiliate.product.query",
-        **_parametros(min(50, max(1, limite)), termo),
-    )
+    for tentativa in range(2):
+        try:
+            result = _chamar(
+                "aliexpress.affiliate.product.query",
+                **_parametros(min(50, max(1, limite)), termo),
+            )
+            break
+        except requests.exceptions.ConnectionError as exc:
+            if tentativa == 0:
+                time.sleep(2)
+                continue
+            raise RuntimeError("Não foi possível acessar o AliExpress por falha de rede ou DNS. Verifique a conexão e tente novamente.") from exc
+        except RuntimeError as exc:
+            if "AliExpress API respondeu 405: The result is empty" not in str(exc):
+                raise
+            return []
     return [offer for item in _produtos(result) if (offer := _produto_para_oferta(item))]
 
 

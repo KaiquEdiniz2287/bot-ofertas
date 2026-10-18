@@ -15,7 +15,7 @@ import sys
 import threading
 import time
 from pathlib import Path
-from urllib.parse import parse_qs, quote_plus, urlencode, urlsplit
+from urllib.parse import parse_qs, quote, urlencode, urlsplit
 
 import requests
 from bs4 import BeautifulSoup
@@ -41,6 +41,10 @@ def e_link(url: str) -> bool:
 
 def tem_sessao() -> bool:
     return PERFIL_DIR.exists() and any(PERFIL_DIR.iterdir())
+
+
+def _precisa_verificacao(url: str) -> bool:
+    return "account-verification" in url or "/captcha/wall" in url
 
 
 # ── Busca de ofertas (scraping, sem login) ───────────────────────────
@@ -77,9 +81,9 @@ def _html_ofertas(s: requests.Session, params: dict) -> str:
     """Usa a sessão já verificada do usuário se o acesso público for barrado."""
     try:
         r = s.get(URL_OFERTAS, params=params or None, timeout=(10, 20))
-        if r.ok and "account-verification" not in r.url and BeautifulSoup(r.text, "lxml").select_one("div.poly-card"):
+        if r.ok and not _precisa_verificacao(r.url) and BeautifulSoup(r.text, "lxml").select_one("div.poly-card"):
             return r.text
-        motivo = "O Mercado Livre pediu verificação da conta" if "account-verification" in r.url else (
+        motivo = "O Mercado Livre pediu verificação da conta" if _precisa_verificacao(r.url) else (
             f"O Mercado Livre respondeu HTTP {r.status_code} ou não exibiu ofertas"
         )
     except requests.exceptions.Timeout:
@@ -103,7 +107,7 @@ def _html_ofertas_logado(params: dict) -> str:
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
             try:
                 response = page.goto(url, wait_until="domcontentloaded", timeout=30_000)
-                if not response or response.status >= 400 or "account-verification" in page.url:
+                if not response or response.status >= 400 or _precisa_verificacao(page.url):
                     raise ValueError("O Mercado Livre bloqueou a página de ofertas. Revalide a conta em Operação > Login do Mercado Livre.")
                 try:
                     page.wait_for_selector("div.poly-card", timeout=10_000)
@@ -197,7 +201,7 @@ def _parse_pagina(html: str) -> list[Oferta]:
 
 def buscar_produtos(termo: str, limite: int = 10) -> list[Oferta]:
     """Busca pontual usando o perfil local, sem alterar a seleção do ciclo."""
-    from playwright.sync_api import sync_playwright
+    from playwright.sync_api import TimeoutError as PlaywrightTimeout, sync_playwright
 
     termo = termo.strip()
     if not termo:
@@ -208,18 +212,28 @@ def buscar_produtos(termo: str, limite: int = 10) -> list[Oferta]:
         ctx = _abrir_contexto(pw, headless=True)
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
         try:
-            page.goto(
-                f"https://lista.mercadolivre.com.br/{quote_plus(termo)}",
-                wait_until="domcontentloaded",
-                timeout=45_000,
-            )
-            if "account-verification" in page.url:
-                raise RuntimeError("O Mercado Livre pediu uma verificação da conta; refaça o login em Operação.")
+            try:
+                response = page.goto(
+                    f"https://lista.mercadolivre.com.br/{quote('-'.join(termo.casefold().split()), safe='')}",
+                    wait_until="domcontentloaded",
+                    timeout=45_000,
+                )
+            except PlaywrightTimeout as exc:
+                raise RuntimeError("O Mercado Livre não respondeu no navegador. Tente novamente mais tarde.") from exc
+            if _precisa_verificacao(page.url):
+                raise RuntimeError("O Mercado Livre pediu uma verificação de segurança. Abra Operação > Login do Mercado Livre, acesse a busca no navegador e conclua a etapa manualmente.")
+            if not response or response.status >= 400:
+                raise RuntimeError(f"O Mercado Livre não liberou a busca (HTTP {response.status if response else 'sem resposta'}).")
             try:
                 page.wait_for_selector("div.poly-card", timeout=15_000)
-            except Exception:
-                pass  # busca válida sem resultados ou conteúdo carregado de outra forma
-            return _parse_pagina(page.content())[:limite]
+            except PlaywrightTimeout:
+                pass  # examina a página final para distinguir bloqueio de ausência de produtos
+            if _precisa_verificacao(page.url):
+                raise RuntimeError("O Mercado Livre pediu uma verificação de segurança. Abra Operação > Login do Mercado Livre, acesse a busca no navegador e conclua a etapa manualmente.")
+            offers = _parse_pagina(page.content())
+            if not offers:
+                raise RuntimeError("O Mercado Livre abriu a busca, mas não exibiu produtos; confira a sessão em Operação > Login do Mercado Livre.")
+            return offers[:limite]
         finally:
             ctx.close()
 

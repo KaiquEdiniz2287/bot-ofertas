@@ -1,6 +1,6 @@
 {
   "name": "bot-ofertas-desktop",
-  "version": "0.17.0",
+  "version": "0.17.2",
   "private": true,
   "scripts": {
     "prestart": "powershell -NoProfile -ExecutionPolicy Bypass -File ..\\scripts\\prepare-dev.ps1",

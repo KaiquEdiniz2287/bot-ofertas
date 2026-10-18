@@ -1,8 +1,9 @@
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from ofertas.models import Oferta
-from ofertas.product_search import _melhor, _melhores, buscar
+from ofertas.product_search import _buscar_fonte, _melhor, _melhores, _termos_busca, buscar
+from ofertas.sources import mercadolivre
 from ofertas.sources.mercadolivre import _url_produto
 
 
@@ -21,6 +22,26 @@ def offer(platform: str, title: str, discount: int = 10) -> Oferta:
 
 
 class ProductSearchTests(unittest.TestCase):
+    def test_busca_longa_tenta_palavras_relevantes_sem_alterar_o_ciclo(self):
+        self.assertEqual(
+            _termos_busca("Kit 3 Bermuda Masculina Tactel Com Elastano Academia Treino"),
+            ["Kit 3 Bermuda Masculina Tactel Com Elastano Academia Treino", "Bermuda Masculina Tactel Elastano"],
+        )
+        self.assertEqual(_termos_busca("Tênis Infantil Com Luz LED"), ["Tênis Infantil Com Luz LED", "Tênis Infantil Luz"])
+
+    def test_todas_as_fontes_tentam_termo_reduzido_quando_nao_ha_itens(self):
+        termo = "Kit 3 Bermuda Masculina Tactel Com Elastano Academia Treino"
+        for key in ("mercadolivre", "shopee", "amazon", "aliexpress"):
+            with self.subTest(plataforma=key), patch(
+                f"ofertas.product_search.{key}.buscar_produtos", side_effect=[[], [offer(key, "Bermuda Masculina Tactel")]]
+            ) as search, patch("ofertas.product_search.mercadolivre.gerar_links_afiliado"), patch(
+                "ofertas.product_search.aliexpress.gerar_links_afiliado"
+            ):
+                self.assertEqual(len(_buscar_fonte(key, termo)), 1)
+                self.assertEqual([call.args[0] for call in search.call_args_list], [
+                    termo, "Bermuda Masculina Tactel Elastano",
+                ])
+
     def test_extrai_produto_real_do_redirecionador_de_anuncio_do_ml(self):
         tracking_url = (
             "https://click1.mercadolivre.com.br/mclics/clicks/external/MLB/count?"
@@ -109,6 +130,79 @@ class ProductSearchTests(unittest.TestCase):
         self.assertFalse(result["results"])
         self.assertEqual(result["errors"][0]["platform"], "shopee")
         self.assertIn("API indisponível", result["errors"][0]["message"])
+
+    @patch("ofertas.product_search.config.fonte_aliexpress", {"ativa": True})
+    @patch("ofertas.product_search.config.fonte_amazon", {"ativa": False})
+    @patch("ofertas.product_search.config.fonte_shopee", {"ativa": False})
+    @patch("ofertas.product_search.config.fonte_ml", {"ativa": False})
+    @patch("ofertas.product_search.aliexpress.gerar_links_afiliado", side_effect=RuntimeError("limite temporário"))
+    @patch("ofertas.product_search.aliexpress.buscar_produtos")
+    def test_busca_reduzida_preserva_link_afiliado_existente(self, search, _links):
+        search.side_effect = [[], [offer("aliexpress", "Bermuda Masculina Tactel")]]
+        result = buscar("Kit 3 Bermuda Masculina Tactel Com Elastano Academia Treino")
+
+        self.assertEqual([call.args[0] for call in search.call_args_list], [
+            "Kit 3 Bermuda Masculina Tactel Com Elastano Academia Treino", "Bermuda Masculina Tactel Elastano",
+        ])
+        self.assertEqual(len(result["results"]), 1)
+        self.assertFalse(result["errors"])
+
+    @patch("ofertas.sources.mercadolivre.tem_sessao", return_value=True)
+    @patch("ofertas.sources.mercadolivre._abrir_contexto")
+    @patch("ofertas.sources.mercadolivre._parse_pagina", return_value=[])
+    @patch("playwright.sync_api.sync_playwright")
+    def test_ml_nao_confunde_pagina_sem_produtos_com_busca_vazia(self, _pw, _parse, abrir, _sessao):
+        page = MagicMock()
+        page.url = "https://lista.mercadolivre.com.br/kit-3-bermuda-masculina"
+        page.goto.return_value.status = 200
+        abrir.return_value.pages = [page]
+
+        with self.assertRaisesRegex(RuntimeError, "não exibiu produtos"):
+            mercadolivre.buscar_produtos("Kit 3 Bermuda Masculina")
+
+        self.assertEqual(page.goto.call_args.args[0], "https://lista.mercadolivre.com.br/kit-3-bermuda-masculina")
+
+    @patch("ofertas.sources.mercadolivre.tem_sessao", return_value=True)
+    @patch("ofertas.sources.mercadolivre._abrir_contexto")
+    @patch("playwright.sync_api.sync_playwright")
+    def test_ml_informa_verificacao_sem_esperar_15_segundos(self, _pw, abrir, _sessao):
+        page = MagicMock()
+        page.url = "https://www.mercadolivre.com.br/gz/account-verification"
+        page.goto.return_value.status = 200
+        abrir.return_value.pages = [page]
+
+        with self.assertRaisesRegex(RuntimeError, "verificação de segurança"):
+            mercadolivre.buscar_produtos("bermuda tactel")
+
+        page.wait_for_selector.assert_not_called()
+
+    @patch("ofertas.sources.mercadolivre.tem_sessao", return_value=True)
+    @patch("ofertas.sources.mercadolivre._abrir_contexto")
+    @patch("playwright.sync_api.sync_playwright")
+    def test_ml_identifica_captcha_real_sem_fingir_busca_vazia(self, _pw, abrir, _sessao):
+        page = MagicMock()
+        page.url = "https://www.mercadolivre.com.br/captcha/wall/logged"
+        page.goto.return_value.status = 200
+        abrir.return_value.pages = [page]
+
+        with self.assertRaisesRegex(RuntimeError, "conclua a etapa manualmente"):
+            mercadolivre.buscar_produtos("fone blue")
+
+        page.wait_for_selector.assert_not_called()
+
+    @patch("ofertas.sources.mercadolivre.tem_sessao", return_value=True)
+    @patch("ofertas.sources.mercadolivre._abrir_contexto")
+    @patch("ofertas.sources.mercadolivre._parse_pagina")
+    @patch("playwright.sync_api.sync_playwright")
+    def test_ml_preserva_acentos_na_url_e_retorna_oferta(self, _pw, parse, abrir, _sessao):
+        page = MagicMock()
+        page.url = "https://lista.mercadolivre.com.br/t%C3%AAnis-infantil"
+        page.goto.return_value.status = 200
+        abrir.return_value.pages = [page]
+        parse.return_value = [offer("mercadolivre", "Tênis Infantil")]
+
+        self.assertEqual(len(mercadolivre.buscar_produtos("Tênis Infantil")), 1)
+        self.assertEqual(page.goto.call_args.args[0], "https://lista.mercadolivre.com.br/t%C3%AAnis-infantil")
 
 
 if __name__ == "__main__":

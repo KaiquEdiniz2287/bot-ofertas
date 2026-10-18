@@ -1,3 +1,34 @@
+# 0.17.2 — Diagnósticos reais na busca de produtos
+
+- A busca manual identifica o bloqueio `/captcha/wall/logged` do Mercado Livre e orienta a concluir a verificação no navegador, sem confundi-lo com ausência de produtos.
+- O bloqueio temporário da Amazon agora aparece como tal na busca manual, mesmo quando o site responde HTTP 200; o ciclo automático mantém o comportamento anterior.
+- Uma falha transitória de rede ou DNS no AliExpress recebe uma nova tentativa antes de exibir uma mensagem clara. A consulta de teste com `fone blue` retornou produtos após a rede voltar.
+- Nenhuma verificação de segurança é contornada automaticamente; pesquisas e publicações das demais plataformas permanecem inalteradas.
+
+## Versionamento
+
+Versão: 0.17.1 → 0.17.2
+Tipo: PATCH
+Motivo: correção compatível dos diagnósticos e de falhas transitórias na busca manual.
+
+---
+
+# 0.17.1 — Busca manual de produtos mais confiável
+
+- Buscas longas que não retornam itens tentam novamente com as palavras principais em Mercado Livre, Shopee, Amazon e AliExpress.
+- A resposta de resultado vazio do AliExpress deixa de impedir essa segunda tentativa; erros reais de API continuam visíveis.
+- A busca do Mercado Livre usa a URL de pesquisa adequada e distingue bloqueio, falha de carregamento e página sem produtos de uma busca válida.
+- Se o AliExpress não conseguir encurtar um link, a busca preserva o link afiliado já fornecido pela API.
+- O ciclo automático, as publicações e as demais integrações permanecem inalterados.
+
+## Versionamento
+
+Versão: 0.17.0 → 0.17.1
+Tipo: PATCH
+Motivo: correção compatível da busca manual e de seus diagnósticos.
+
+---
+
 # 0.17.0 — Histórico com cópia e atualização automática
 
 - Cada produto do Histórico agora tem um botão **Copiar** para compartilhar o texto da oferta.

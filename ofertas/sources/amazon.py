@@ -270,7 +270,7 @@ def _tarefas_do_ciclo() -> list[dict]:
 
 
 def _buscar_por_scraping(tarefas: list[dict], paginas: int | None = None,
-                         pausa_segundos: int = 3) -> list[Oferta]:
+                         pausa_segundos: int = 3, erro_quando_bloqueado: bool = False) -> list[Oferta]:
     paginas = paginas or int(config.fonte_amazon.get("paginas", 1))
     s = _sessao()
     ofertas: dict[str, Oferta] = {}
@@ -284,9 +284,13 @@ def _buscar_por_scraping(tarefas: list[dict], paginas: int | None = None,
                 try:
                     r = s.get(URL_BUSCA, params=params, timeout=30)
                 except Exception as e:
+                    if erro_quando_bloqueado:
+                        raise RuntimeError("A Amazon não respondeu à busca. Verifique a conexão e tente novamente mais tarde.") from e
                     log.error("Amazon %s: %s", tarefa["rotulo"], e)
                     return list(ofertas.values())
                 if r.status_code != 200 or _bloqueado(r.text):
+                    if erro_quando_bloqueado:
+                        raise RuntimeError(f"A Amazon bloqueou temporariamente a busca (HTTP {r.status_code}). Tente novamente mais tarde.")
                     log.warning(
                         "Amazon não liberou a consulta (HTTP %s): indisponibilidade ou bloqueio temporário. "
                         "Busca da Amazon encerrada nesta execução; as demais plataformas continuam.",
@@ -356,6 +360,7 @@ def buscar_produtos(termo: str, limite: int = 10) -> list[Oferta]:
         [{"rotulo": f"busca manual '{termo}'", "params": {"k": termo}}],
         paginas=1,
         pausa_segundos=0,
+        erro_quando_bloqueado=True,
     )[:limite]
 
 
