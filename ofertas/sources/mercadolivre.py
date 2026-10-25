@@ -31,6 +31,8 @@ URL_LINKBUILDER = "https://www.mercadolivre.com.br/afiliados/linkbuilder"
 API_CREATELINK = "https://www.mercadolivre.com.br/affiliate-program/api/v2/affiliates/createLink"
 PERFIL_DIR = DATA_DIR / "ml_profile"
 _PERFIL_LOCK = threading.Lock()
+_COLETA_LOCK = threading.Lock()
+CLOAK_VERSION = "146.0.7680.177.5"  # Versão validada; atualizar após teste de coleta.
 
 _RE_ID = re.compile(r"(MLB-?\d{6,})")
 
@@ -91,10 +93,61 @@ def _html_ofertas(s: requests.Session, params: dict) -> str:
     except requests.exceptions.RequestException as exc:
         motivo = f"Não foi possível acessar o Mercado Livre ({type(exc).__name__})"
 
+    log.info("%s; tentando a coleta com CloakBrowser sem janela.", motivo)
+    try:
+        return _html_ofertas_cloak(params)
+    except Exception as exc:
+        # A falha desse coletor não elimina a recuperação pelo perfil já existente.
+        # Não imprimir exceções do navegador: podem conter URLs/tokens de sessão.
+        log.warning("CloakBrowser não concluiu a coleta (%s); tentando o navegador padrão. Se ainda não instalou, use Operação > Instalar navegador.", type(exc).__name__)
     if not tem_sessao():
         raise ValueError(f"{motivo}. Faça o login do Mercado Livre em Operação e tente novamente.")
     log.warning("%s; tentando a sessão já conectada no navegador.", motivo)
     return _html_ofertas_logado(params)
+
+
+def cloak_instalado() -> bool:
+    from cloakbrowser import binary_info
+    return bool(binary_info(browser_version=CLOAK_VERSION)["installed"])
+
+
+def instalar_cloak() -> None:
+    from cloakbrowser import ensure_binary
+    with _COLETA_LOCK:
+        log.info("Preparando CloakBrowser para a coleta do ML. O primeiro download pode demorar (aproximadamente 535 MB).")
+        ensure_binary(browser_version=CLOAK_VERSION)
+        log.info("CloakBrowser pronto para coletar ofertas sem janela.")
+
+
+def _html_ofertas_cloak(params: dict) -> str:
+    from cloakbrowser import launch_persistent_context
+    from playwright.sync_api import TimeoutError as PlaywrightTimeout
+
+    with _COLETA_LOCK:
+        # Downloads grandes pertencem à ação de instalação, nunca ao ciclo.
+        if not cloak_instalado():
+            raise FileNotFoundError("Instale o navegador em Operação > Instalar navegador.")
+        ctx = launch_persistent_context(
+            str(DATA_DIR / "ml_coleta_profile"), headless=True, locale="pt-BR",
+            browser_version=CLOAK_VERSION, timeout=30_000,
+        )
+        try:
+            page = ctx.pages[0] if ctx.pages else ctx.new_page()
+            url = URL_OFERTAS + ("?" + urlencode(params) if params else "")
+            response = page.goto(url, wait_until="domcontentloaded", timeout=30_000)
+            if response is None or response.status >= 400 or _precisa_verificacao(page.url):
+                raise ValueError("Mercado Livre não liberou a coleta sem janela.")
+            try:
+                page.wait_for_selector("div.poly-card", timeout=10_000)
+            except PlaywrightTimeout:
+                pass
+            html = page.content()
+            if _precisa_verificacao(page.url) or not _parse_pagina(html):
+                raise ValueError("Mercado Livre não retornou ofertas utilizáveis.")
+            log.info("Mercado Livre: página de ofertas coletada com CloakBrowser sem janela.")
+            return html
+        finally:
+            ctx.close()
 
 
 def _html_ofertas_logado(params: dict) -> str:
@@ -102,25 +155,34 @@ def _html_ofertas_logado(params: dict) -> str:
 
     url = URL_OFERTAS + ("?" + urlencode(params) if params else "")
     with _PERFIL_LOCK, sync_playwright() as pw:
-        ctx = _abrir_contexto(pw, headless=True)
-        try:
-            page = ctx.pages[0] if ctx.pages else ctx.new_page()
+        for headless in (True, False):
+            ctx = _abrir_contexto(pw, headless=headless)
             try:
+                page = ctx.pages[0] if ctx.pages else ctx.new_page()
                 response = page.goto(url, wait_until="domcontentloaded", timeout=30_000)
-                if not response or response.status >= 400 or _precisa_verificacao(page.url):
+                bloqueado = _precisa_verificacao(page.url) or (response is not None and response.status in {401, 403, 429})
+                if response is not None and response.status < 400 and not bloqueado:
+                    try:
+                        page.wait_for_selector("div.poly-card", timeout=10_000)
+                    except PlaywrightTimeout:
+                        pass
+                    # Scripts da página também podem redirecionar para a verificação.
+                    bloqueado = _precisa_verificacao(page.url)
+                    if not bloqueado:
+                        html = page.content()
+                        if not BeautifulSoup(html, "lxml").select_one("div.poly-card"):
+                            raise ValueError("O Mercado Livre abriu, mas não mostrou ofertas. Confira a página no navegador e revalide a conta se necessário.")
+                        return html
+                if bloqueado:
+                    if headless:
+                        log.warning("Mercado Livre bloqueou a coleta em segundo plano; tentando uma vez com o Chrome visível.")
+                        continue
                     raise ValueError("O Mercado Livre bloqueou a página de ofertas. Revalide a conta em Operação > Login do Mercado Livre.")
-                try:
-                    page.wait_for_selector("div.poly-card", timeout=10_000)
-                except PlaywrightTimeout:
-                    pass
+                raise ValueError(f"O Mercado Livre não liberou a página de ofertas (HTTP {response.status if response is not None else 'sem resposta'}). Tente novamente mais tarde.")
             except PlaywrightTimeout as exc:
                 raise ValueError("O Mercado Livre não respondeu no navegador. Tente novamente mais tarde.") from exc
-            html = page.content()
-            if not BeautifulSoup(html, "lxml").select_one("div.poly-card"):
-                raise ValueError("O Mercado Livre abriu, mas não mostrou ofertas. Confira a página no navegador e revalide a conta se necessário.")
-            return html
-        finally:
-            ctx.close()
+            finally:
+                ctx.close()
 
 
 def _preco_de(card, seletor_base: str) -> float | None:
@@ -209,7 +271,7 @@ def buscar_produtos(termo: str, limite: int = 10) -> list[Oferta]:
     if not tem_sessao():
         raise RuntimeError("Faça o login do Mercado Livre em Operação antes de pesquisar.")
     with _PERFIL_LOCK, sync_playwright() as pw:
-        ctx = _abrir_contexto(pw, headless=True)
+        ctx = _abrir_contexto(pw, headless=False)
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
         try:
             try:
@@ -246,6 +308,8 @@ def _abrir_contexto(pw, headless: bool):
     O ML recusa login no "Chrome for Testing" do Playwright, então usamos o
     Chrome real via channel="chrome" e removemos as marcas de automação.
     """
+    if not headless:
+        log.info("Mercado Livre: consultando pelo Chrome visível com o perfil salvo; a janela fecha ao concluir.")
     kwargs = dict(
         channel="chrome",
         headless=headless,
@@ -320,12 +384,12 @@ def ml_login() -> None:
     PERFIL_DIR.mkdir(parents=True, exist_ok=True)
     print("\n➡️  Vai abrir um Chrome normal com o perfil do bot (separado do seu).")
     print("    1. Faça login no Mercado Livre (senha, 2FA etc.)")
-    print("    2. Confira que o Linkbuilder carrega logado")
+    print("    2. Confira que o Linkbuilder e a página de ofertas carregam logados")
     print("    3. FECHE o navegador para terminar\n")
     proc = subprocess.Popen([chrome, f"--user-data-dir={PERFIL_DIR}", "--no-first-run",
-                             "--no-default-browser-check", URL_LINKBUILDER])
+                             "--no-default-browser-check", URL_LINKBUILDER, URL_OFERTAS])
     proc.wait()
-    print(f"✅ Perfil salvo em {PERFIL_DIR} — o bot usa essa sessão sozinho daqui pra frente.")
+    print(f"✅ Perfil salvo em {PERFIL_DIR}. Execute o teste do Mercado Livre para validar o acesso às ofertas.")
     print('   Teste com: uv run python -m ofertas converter "<link de produto do ML>"')
 
 
@@ -360,7 +424,7 @@ def _criar_links_api(page, urls: list[str], etiqueta: str) -> list[str]:
 
 
 def gerar_links_afiliado(ofertas: list[Oferta]) -> None:
-    """Preenche oferta.url_afiliado via API do Linkbuilder (lotes de 10 URLs)."""
+    """Preenche os links em segundo plano pelo Linkbuilder (lotes de 10 URLs)."""
     from playwright.sync_api import sync_playwright
 
     if not tem_sessao():
@@ -391,43 +455,104 @@ def gerar_links_afiliado(ofertas: list[Oferta]) -> None:
             ctx.close()
 
 
+def _dados_produto(html: str) -> dict:
+    soup = BeautifulSoup(html, "lxml")
+    titulo = soup.select_one("h1.ui-pdp-title")
+    if not titulo or not titulo.get_text(strip=True):
+        return {}  # Não aceitar logos/preços de uma página de verificação ou vitrine.
+
+    def preco_visivel(selector):
+        el = soup.select_one(selector)
+        if not el:
+            return None
+        inteiro = el.select_one(".andes-money-amount__fraction")
+        centavos = el.select_one(".andes-money-amount__cents")
+        if not inteiro:
+            return None
+        return parse_preco_br(inteiro.get_text() + ("," + centavos.get_text() if centavos else ""))
+
+    preco = soup.select_one('meta[itemprop="price"]')
+    imagem = soup.select_one('meta[property="og:image"]')
+    return {
+        "titulo": titulo.get_text(strip=True),
+        "preco": (parse_preco_br(preco.get("content")) if preco else None)
+            or preco_visivel(".ui-pdp-price__second-line .andes-money-amount"),
+        "preco_original": preco_visivel("s.andes-money-amount--previous"),
+        "imagem": imagem.get("content") if imagem else None,
+    }
+
+
+def _dados_produto_cloak(url: str) -> dict:
+    from cloakbrowser import launch_persistent_context
+    from playwright.sync_api import Error as PlaywrightError
+
+    with _COLETA_LOCK:
+        if not cloak_instalado():
+            raise FileNotFoundError("Instale o navegador em Operação > Instalar navegador.")
+        ctx = launch_persistent_context(
+            str(DATA_DIR / "ml_coleta_profile"), headless=True, locale="pt-BR",
+            browser_version=CLOAK_VERSION, timeout=30_000,
+        )
+        try:
+            page = ctx.pages[0] if ctx.pages else ctx.new_page()
+            response = page.goto(url, wait_until="domcontentloaded", timeout=30_000)
+            if response is None or response.status >= 400 or _precisa_verificacao(page.url):
+                raise ValueError("Mercado Livre não liberou os dados do produto sem janela.")
+            # Links /up podem navegar novamente depois do carregamento inicial.
+            # Uma única recuperação evita ler o HTML durante essa transição.
+            for tentativa in range(2):
+                try:
+                    page.wait_for_load_state("domcontentloaded", timeout=15_000)
+                    page.wait_for_selector("h1.ui-pdp-title", timeout=20_000)
+                    html = page.content()
+                    break
+                except PlaywrightError:
+                    if tentativa or _precisa_verificacao(page.url):
+                        raise
+            dados = {} if _precisa_verificacao(page.url) else _dados_produto(html)
+            if not dados:
+                raise ValueError("Mercado Livre não retornou os dados do produto.")
+            return dados
+        finally:
+            ctx.close()
+
+
 def converter(url: str) -> Oferta:
     """Link de produto -> Oferta com dados da página + link de afiliado."""
     url = url.split("#")[0]
     if "meli.la/" in url:  # link de afiliado encurtado: expande até o produto
         try:
-            url = sessao().get(url, allow_redirects=True, timeout=20).url.split("#")[0]
+            resposta = sessao().get(url, allow_redirects=True, timeout=20)
+            if resposta.ok and not _precisa_verificacao(resposta.url):
+                url = resposta.url.split("#")[0]
         except Exception as e:
             log.warning("Não consegui expandir o link meli.la: %s", e)
-    titulo = preco = preco_original = imagem = None
+    dados = {}
     try:
         r = sessao().get(url, timeout=25)
-        soup = BeautifulSoup(r.text, "lxml")
-        el = soup.select_one("h1.ui-pdp-title")
-        titulo = el.get_text(strip=True) if el else None
-        el = soup.select_one('meta[property="og:image"]')
-        imagem = el.get("content") if el else None
-        el = soup.select_one('meta[itemprop="price"]')
-        if el and el.get("content"):
-            preco = float(el["content"])
-        else:
-            el = soup.select_one(".ui-pdp-price__second-line .andes-money-amount__fraction")
-            preco = parse_preco_br(el.get_text()) if el else None
-        el = soup.select_one("s.andes-money-amount--previous .andes-money-amount__fraction")
-        preco_original = parse_preco_br(el.get_text()) if el else None
-    except Exception as e:
-        log.warning("Não consegui ler a página do produto: %s", e)
+        if r.ok and not _precisa_verificacao(r.url):
+            dados = _dados_produto(r.text)
+    except requests.RequestException as e:
+        log.info("Mercado Livre: a leitura simples do produto falhou (%s).", type(e).__name__)
+    if not all(dados.get(campo) for campo in ("titulo", "preco", "imagem")):
+        log.info("Mercado Livre: dados incompletos no acesso simples; consultando o produto com CloakBrowser sem janela.")
+        try:
+            recuperados = _dados_produto_cloak(url)
+            dados.update({campo: valor for campo, valor in recuperados.items() if valor is not None})
+            log.info("Mercado Livre: leitura do produto com CloakBrowser concluída.")
+        except Exception as e:
+            log.warning("Mercado Livre: não foi possível completar os dados com CloakBrowser (%s); a conversão do link continuará. Confira Operação > Instalar navegador se necessário.", type(e).__name__)
 
     m = _RE_ID.search(url)
     oferta = Oferta(
         plataforma="mercadolivre",
         id_produto=m.group(1).replace("-", "") if m else url.rstrip("/").rsplit("/", 1)[-1][:40],
-        titulo=titulo or "Oferta Mercado Livre",
+        titulo=dados.get("titulo") or "Oferta Mercado Livre",
         url_afiliado="",
         url_produto=url.split("?")[0],
-        preco=preco,
-        preco_original=preco_original,
-        imagem=imagem,
+        preco=dados.get("preco"),
+        preco_original=dados.get("preco_original"),
+        imagem=dados.get("imagem"),
     )
     gerar_links_afiliado([oferta])
     if not oferta.url_afiliado:

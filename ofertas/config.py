@@ -77,6 +77,7 @@ class Config:
         self.fonte_aliexpress: dict = fontes.get("aliexpress") or {
             "ativa": True, "limite": 40, "buscas": []
         }
+        self.fonte_shein: dict = fontes.get("shein") or {"ativa": False, "limite": 30, "buscas": []}
 
         # Seleção de nichos feita no painel (data/nichos.json). Se houver, ela
         # SUBSTITUI as categorias/departamentos/buscas do config.yaml.
@@ -93,6 +94,7 @@ class Config:
                                      "buscas": exp["amazon_buscas"]}
                 self.fonte_shopee = {**self.fonte_shopee, "buscas": exp["shopee"]}
                 self.fonte_aliexpress = {**self.fonte_aliexpress, "buscas": exp["aliexpress"]}
+                self.fonte_shein = {**self.fonte_shein, "buscas": exp["shopee"]}
         except Exception:
             pass
 
@@ -145,6 +147,8 @@ def verificar() -> list[str]:
         pendencias.append("ALIEXPRESS_APP_KEY / ALIEXPRESS_APP_SECRET / ALIEXPRESS_TRACKING_ID")
     if not config.ml_etiqueta:
         pendencias.append("ML_ETIQUETA (a 'Etiqueta em uso' do Linkbuilder do ML)")
+    if config.fonte_shein.get("ativa") and not (DATA_DIR / "shein_profile" / "Default").exists():
+        pendencias.append("Sessão da SHEIN (prepare em Operação > Login da SHEIN)")
     if not list((DATA_DIR / "pw-browsers").glob("chromium-*")):
         pendencias.append("Chromium do Playwright (rode: uv run python -m ofertas instalar-navegador)")
     perfil_ml = DATA_DIR / "ml_profile"

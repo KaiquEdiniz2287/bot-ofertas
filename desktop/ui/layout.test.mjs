@@ -7,6 +7,7 @@ const app = readFileSync(new URL("./app.js", import.meta.url), "utf8");
 const html = readFileSync(new URL("./index.html", import.meta.url), "utf8");
 const rust = readFileSync(new URL("../src-tauri/src/main.rs", import.meta.url), "utf8");
 const backend = readFileSync(new URL("../src-tauri/src/backend.rs", import.meta.url), "utf8");
+const marketplaces = readFileSync(new URL("./marketplaces.mjs", import.meta.url), "utf8");
 test("mantém somente as áreas de ofertas e a conexão WhatsApp", () => {
   assert.doesNotMatch(html, /data-page="autoresponder"/);
   assert.doesNotMatch(app, /autoresponder|refreshResponder/);
@@ -34,12 +35,19 @@ test("histórico permite copiar cada oferta e atualiza sem recarregar a página"
   assert.match(app, /setInterval\(\(\)=>\{if\(state\.page==="history"\)void refreshHistory\(\)\},3000\)/);
 });
 
+test("exporta ofertas individuais do histórico e da pesquisa sem remover cópia", () => {
+  assert.match(app, /sendAiButton\("history",index\)/);
+  assert.match(app, /sendAiButton\("search",index\)/);
+  assert.match(app, /data-sendai-status/);
+  for (const command of ["get_sendai_status", "export_sendai"]) assert.ok(backend.includes(`"${command}"`));
+});
+
 test("exibe as credenciais da Amazon nas configurações", () => {
-  assert.match(app, /field\("AMAZON_CREDENTIAL_ID"/);
-  assert.match(app, /field\("AMAZON_CREDENTIAL_SECRET"[^)]*true\)/);
-  assert.match(app, /field\("ALIEXPRESS_APP_KEY"/);
-  assert.match(app, /field\("ALIEXPRESS_APP_SECRET"[^)]*true\)/);
-  assert.match(app, /field\("ALIEXPRESS_TRACKING_ID"/);
+  assert.match(marketplaces, /\["AMAZON_CREDENTIAL_ID"/);
+  assert.match(marketplaces, /\["AMAZON_CREDENTIAL_SECRET"[^\]]*true\]/);
+  assert.match(marketplaces, /\["ALIEXPRESS_APP_KEY"/);
+  assert.match(marketplaces, /\["ALIEXPRESS_APP_SECRET"[^\]]*true\]/);
+  assert.match(marketplaces, /\["ALIEXPRESS_TRACKING_ID"/);
 });
 
 test("permite selecionar as categorias do ciclo automático", () => {
@@ -47,7 +55,7 @@ test("permite selecionar as categorias do ciclo automático", () => {
   assert.match(app, /nicheCatalog\.map/);
   assert.match(app, /name="nichos"/);
   assert.match(app, /data\.getAll\("nichos"\)/);
-  assert.match(app, /request\("save_settings",\{env,nichos,preferences\}\)/);
+  assert.match(app, /request\("save_settings",\{env,nichos,preferences,config:/);
   assert.match(css, /\.category-grid/);
 });
 

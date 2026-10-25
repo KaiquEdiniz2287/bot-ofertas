@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import datetime as dt
 import logging
+import re
 import sys
 import traceback
 from dataclasses import asdict
@@ -12,6 +13,7 @@ from dataclasses import asdict
 from telegram import Bot
 
 from . import db, pipeline
+from . import sendai_export
 from .bot_interativo import BotRuntime
 from .config import DATA_DIR, config, reload_config
 from .desktop_protocol import JsonEmitter, ProtocolError, PublicError, parse_request, sanitize
@@ -26,6 +28,12 @@ class _ProtocolLogHandler(logging.Handler):
         self.emitter = emitter
 
     def emit(self, record):
+        if record.name == "httpx" and record.levelno == logging.INFO and re.fullmatch(
+            r'HTTP Request: POST https://api\.telegram\.org/bot.+/getUpdates "HTTP/[\d.]+ 200 OK"',
+            record.getMessage(),
+        ):
+            self.emitter.log("INFO", "Telegram", "Consulta de mensagens concluída. Aguardando novos comandos e links pelo Telegram.")
+            return
         self.emitter.log(record.levelname, record.name, self.format(record))
 
 
@@ -61,6 +69,7 @@ class DesktopService:
         self._action_lock = asyncio.Lock()
         self._ml_lock = asyncio.Lock()
         self._search_lock = asyncio.Lock()
+        self._conversion_lock = asyncio.Lock()
         self._shutdown = False
         self._handlers = {
             "get_status": self._get_status,
@@ -72,8 +81,12 @@ class DesktopService:
             "test_source": self._test_source,
             "install_browser": self._install_browser,
             "start_ml_login": self._start_ml_login,
+            "start_shein_login": self._start_shein_login,
             "get_history": self._get_history,
+            "get_sendai_status": self._get_sendai_status,
+            "export_sendai": self._export_sendai,
             "search_products": self._search_products,
+            "convert_link": self._convert_link,
             "import_legacy_data": self._import_legacy_data,
             "whatsapp_connect": self._whatsapp_connect,
             "whatsapp_groups": self._whatsapp_groups,
@@ -116,6 +129,12 @@ class DesktopService:
         self.emitter.emit({"type": "whatsapp", "event": event, **payload})
         self._emit_state()
 
+    async def _get_sendai_status(self, payload: dict) -> dict:
+        return await asyncio.to_thread(sendai_export.get_status)
+
+    async def _export_sendai(self, payload: dict) -> dict:
+        return await asyncio.to_thread(sendai_export.export_offer, payload)
+
     async def handle(self, request: dict) -> dict:
         request_id = request.get("id")
         try:
@@ -131,6 +150,8 @@ class DesktopService:
             }
 
     def _state(self) -> dict:
+        from .sources.mercadolivre import cloak_instalado
+        from .sources.shein import tem_sessao as shein_session
         browser_dir = DATA_DIR / "pw-browsers"
         ml_profile = DATA_DIR / "ml_profile"
         return {
@@ -142,8 +163,9 @@ class DesktopService:
             "whatsappStatus": self.whatsapp.status,
             "whatsappAccount": self.whatsapp.account,
             "pendingDeliveries": db.total_pendentes_whatsapp(),
-            "browserInstalled": bool(list(browser_dir.glob("chromium-*"))),
+            "browserInstalled": bool(list(browser_dir.glob("chromium-*"))) and cloak_instalado(),
             "mlSessionDetected": ml_profile.exists() and any(ml_profile.iterdir()),
+            "sheinSessionDetected": shein_session(),
             "cycleIntervalRangeSeconds": [config.intervalo_ciclo_min_minutos * 60,
                                           config.intervalo_ciclo_max_minutos * 60]
             if config.intervalo_minutos > 0 else None,
@@ -184,6 +206,8 @@ class DesktopService:
 
     async def _save_settings(self, payload):
         await asyncio.to_thread(write_settings, payload)
+        if self.runtime.running and not self._runtime_state["cycleRunning"]:
+            self.runtime.ensure_cycle_scheduled()
         self._emit_state()
         return {"saved": True}
 
@@ -266,7 +290,7 @@ class DesktopService:
 
     async def _test_source(self, payload):
         source = payload.get("source")
-        if source not in {"ml", "shopee", "amazon", "aliexpress"}:
+        if source not in {"ml", "shopee", "amazon", "aliexpress", "shein"}:
             raise PublicError("Fonte inválida.")
         if source == "ml" and self.runtime.running:
             raise PublicError("Pare o bot antes de testar o Mercado Livre.")
@@ -282,6 +306,11 @@ class DesktopService:
             elif source == "amazon":
                 from .sources import amazon
                 offers = amazon.buscar_ofertas()
+            elif source == "shein":
+                from .sources import shein
+                offers = shein.buscar_ofertas(10)
+                if offers:
+                    shein.gerar_links_afiliado(offers[:1])
             else:
                 from .sources import aliexpress
                 offers = aliexpress.buscar_ofertas(10)
@@ -311,6 +340,11 @@ class DesktopService:
     async def _get_history(self, payload):
         return {"items": await asyncio.to_thread(db.listar, payload.get("limit", 100), payload.get("offset", 0))}
 
+    async def _start_shein_login(self, _):
+        from .sources.shein import login
+        await self._exclusive("Login da SHEIN", login)
+        return {"completed": True}
+
     async def _search_products(self, payload):
         query = str(payload.get("query") or "").strip()
         if len(query) < 2:
@@ -330,6 +364,32 @@ class DesktopService:
             "INFO", "busca",
             f"Pesquisa manual concluída: {len(result['results'])} resultado(s) pronto(s) para copiar.",
         )
+        return result
+
+    async def _convert_link(self, payload):
+        from .link_converter import converter, identificar
+
+        url = payload.get("url", "")
+        platform = identificar(url)
+        if self._conversion_lock.locked():
+            raise PublicError("Já existe uma conversão em andamento. Aguarde terminar.")
+        if platform == "mercadolivre" and self._ml_lock.locked():
+            raise PublicError("O perfil do Mercado Livre está em uso por uma operação. Aguarde e tente novamente.")
+        reload_config()
+        async with self._conversion_lock:
+            self.emitter.log("INFO", "conversão", "Conversão de link iniciada; nenhuma oferta será publicada.")
+            try:
+                if platform == "mercadolivre":
+                    async with self._ml_lock:
+                        result = await asyncio.to_thread(converter, url)
+                else:
+                    result = await asyncio.to_thread(converter, url)
+            except Exception as exc:
+                self.emitter.log("WARNING", "conversão", f"Não foi possível converter: {sanitize(exc)}")
+                raise PublicError(sanitize(exc)) from exc
+        self.emitter.log("INFO", "conversão", f"Link de {result['label']} pronto para copiar.")
+        for warning in result.get("warnings", []):
+            self.emitter.log("WARNING", "conversão", warning)
         return result
 
     async def _import_legacy_data(self, payload):

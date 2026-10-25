@@ -9,7 +9,7 @@ from telegram import Bot
 from . import db
 from .config import config, dentro_do_horario
 from .models import Oferta
-from .sources import aliexpress, amazon, mercadolivre, shopee
+from .sources import aliexpress, amazon, mercadolivre, shein, shopee
 from .telegram_poster import postar_oferta
 from .formatter import montar_whatsapp
 from .settings import read_settings
@@ -59,6 +59,12 @@ def coletar() -> list[Oferta]:
                 log.error("Mercado Livre: %s", e)
         else:
             log.warning("Mercado Livre ativo mas sem sessão de afiliado — rode: uv run python -m ofertas ml-login")
+
+    if config.fonte_shein.get("ativa"):
+        try:
+            todas += shein.buscar_ofertas(int(config.fonte_shein.get("limite", 30)))
+        except Exception as e:
+            log.error("SHEIN: %s", e)
 
     return todas
 
@@ -170,6 +176,16 @@ async def executar_ciclo(bot: Bot, whatsapp=None, state_callback=None) -> int:
             await asyncio.to_thread(aliexpress.gerar_links_afiliado, ali_escolhidas)
         except Exception as e:
             log.error("AliExpress: falha ao gerar o link curto de afiliado: %s", e)
+
+    shein_escolhidas = [o for o in escolhidas if o.plataforma == "shein" and not o.url_afiliado]
+    if shein_escolhidas:
+        try:
+            await asyncio.to_thread(shein.gerar_links_afiliado, shein_escolhidas)
+        except Exception as e:
+            log.error("SHEIN: falha ao gerar links de afiliado: %s", e)
+        # A conversão pode atualizar o preço estimado da vitrine; revalidar só a nova fonte.
+        validas_shein = {o.uid for o in filtrar(shein_escolhidas)}
+        escolhidas = [o for o in escolhidas if o.plataforma != "shein" or o.uid in validas_shein]
 
     preferences = read_settings(False).get("preferences") or {}
     whatsapp_enabled = bool(preferences.get("whatsappEnabled"))

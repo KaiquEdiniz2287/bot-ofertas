@@ -1,10 +1,46 @@
 # Bot de Ofertas para Telegram e WhatsApp 🔥
 
-Bot que roda **no seu PC** (Windows), garimpa promoções em **Mercado Livre, Shopee, Amazon e AliExpress** e publica no Telegram e, opcionalmente, em um grupo e/ou Canal próprio do WhatsApp com **os seus links de afiliado**. Tudo local, sem servidor nem mensalidade.
+Bot que roda **no seu PC** (Windows), garimpa promoções em **Mercado Livre, Shopee, Amazon, AliExpress e SHEIN** e publica no Telegram e, opcionalmente, em um grupo e/ou Canal próprio do WhatsApp com **os seus links de afiliado**. Tudo local, sem servidor nem mensalidade.
 
 > ⚠️ Você precisa das **suas próprias** contas de afiliado (Mercado Livre, Amazon Associados, Shopee Afiliados e AliExpress Portals). As comissões vão para quem configurar — cada pessoa usa as suas.
 
+## Exportar ofertas para o SendAiPlus
+
+Com o **SendAiPlus 0.12.0 ou superior aberto** no mesmo usuário do Windows (inclusive na bandeja), use **Exportar SendAi** em cada oferta do Histórico ou de Buscar produtos. O botão é habilitado automaticamente ao detectar o aplicativo; versões anteriores precisam ser atualizadas.
+
+A exportação cria um post **Texto com link**, ativo, com o nome do produto como nome interno, sem título opcional e com o mesmo texto formatado usado por **Copiar**. Ela não publica mensagens, não interrompe o ciclo e não seleciona o post no respondedor: escolha-o depois na biblioteca do SendAiPlus. Registros antigos sem link não podem ser exportados.
+
+A conexão é local (`127.0.0.1`), com uma credencial temporária por execução. O Bot só confirma depois que o SendAiPlus salva. Se a confirmação falhar, repetir o botão na mesma sessão reutiliza o identificador para evitar duplicação. O estado “Exportado” é da sessão atual; depois de reabrir o Bot, uma nova exportação é uma nova inclusão.
+
 ## Como funciona
+
+### Converter link no aplicativo
+
+Na aba **Converter link**, cole um endereço de produto do Mercado Livre, Shopee, Amazon, AliExpress ou SHEIN e clique em **Converter para meu link de afiliado**. A plataforma é identificada automaticamente e usa as credenciais salvas em Configurações. Mercado Livre e SHEIN precisam do respectivo perfil de login preparado em Operação.
+
+O resultado oferece **Copiar link** e, quando o nome do produto estiver disponível, **Copiar oferta formatada**, usando o mesmo modelo das publicações. Dados ausentes não são inventados. A conversão não publica, não registra no histórico e pode ser usada com o bot ativo; o acesso ao perfil do ML aguarda a geração de links que já estiver em andamento.
+
+### SHEIN
+
+Em **Operação → Login da SHEIN**, faça login na janela exclusiva, confira o conversor e o catálogo de afiliados e feche o navegador. A sessão fica em `data/shein_profile`, separada do Mercado Livre e do seu Chrome pessoal. O perfil detectado indica apenas que há dados locais; use **Testar SHEIN** para confirmar busca e conversão de um produto, sem publicar.
+
+Ative **Configurações → SHEIN → Pesquisar e publicar ofertas da SHEIN** para incluir a fonte no ciclo e na busca manual. Ela começa desativada nas instalações existentes. A aba **Converter link** também aceita links `shein.com`, `onelink.shein.com` e `shein.top`, usando a mesma sessão. Não é necessário preencher App Key nem copiar cookies.
+
+A coleta consulta os **produtos recomendados do painel de afiliados** ou até dois termos por ciclo, em rodízio, respeitando as categorias escolhidas. A pesquisa avulsa usa o formulário de pesquisa do mesmo painel. A busca pública `/pdsearch/`, que exigiu verificação nos testes, deixou de fazer parte desses fluxos. Cada consulta aproveita até duas páginas de resultados carregadas pela própria interface, com limite de espera; o Console mostra o termo e a quantidade encontrada. O painel pode disponibilizar menos produtos que a loja pública.
+
+Os filtros gerais de preço, desconto e repetição continuam valendo. Comissão e bônus do afiliado não são tratados como desconto do produto. Produtos sugeridos pelo painel sem correspondência textual com a pesquisa são descartados. Links afiliados são gerados no conversor oficial somente para as ofertas escolhidas no ciclo e os três melhores resultados da busca manual. A resposta do conversor atualiza preços, imagem, avaliação e vendas quando disponíveis; o ciclo revalida o desconto antes de publicar.
+
+Consulta e conversão começam pelo **Chrome sem janela**, usando o perfil salvo da SHEIN. O **CloakBrowser persistente** permanece como alternativa, em `data/shein_coleta_profile`. A sessão da conta é importada na primeira preparação e sincronizada depois de um novo login solicitado pelo usuário; apenas cookies e dados locais da SHEIN são transferidos. Nenhuma API privada é chamada diretamente: o módulo observa as respostas produzidas pela navegação e pelos formulários do painel. Apenas o login solicitado pelo usuário abre janela. Verificações reais continuam exigindo intervenção manual; nenhum navegador garante acesso permanente. Os testes e limites da correção estão em `docs/diagnosticos/2026-10-25-shein-catalogo-afiliados.md`.
+
+Comandos opcionais: `uv run python -m ofertas shein-login` e `uv run python -m ofertas testar shein`. Não compartilhe a pasta de dados, pois ela contém sessões autenticadas.
+
+### Escolher marketplaces
+
+Em **Configurações → 02 Marketplaces**, Mercado Livre, Amazon, Shopee e AliExpress têm subblocos próprios com suas credenciais e um interruptor **Usar**. A SHEIN mantém o interruptor em seu bloco separado. Desmarque as fontes que não deseja consultar e salve: a seleção passa a valer no próximo ciclo e nas novas pesquisas manuais. Uma operação em andamento pode concluir usando a seleção anterior.
+
+As chaves e os perfis permanecem salvos ao desativar uma fonte. O conversor de links avulsos continua disponível para plataformas desativadas. Se todas as fontes estavam desligadas quando o bot iniciou, habilitar uma delas agenda o primeiro ciclo em 30 segundos; pausas já agendadas são preservadas.
+
+O visto verde no botão de login da SHEIN indica que o perfil foi salvo localmente. O teste da plataforma confirma o acesso atual; sessões podem expirar. No Console, consultas bem-sucedidas do Telegram aparecem como **Consulta de mensagens concluída. Aguardando novos comandos e links pelo Telegram.**, sem mudar a frequência das consultas ou ocultar falhas.
 
 Dois modos, no mesmo programa:
 
@@ -17,6 +53,19 @@ Dois modos, no mesmo programa:
 | Shopee | Open API oficial de afiliados (busca por palavra-chave) | A API já devolve o link com sua comissão |
 | Amazon | Creators API; ou, enquanto sua conta não é elegível, ofertas por departamento | Link com a sua tag |
 | AliExpress | Affiliate API oficial, por nicho ou produtos em alta, em português e BRL | A API devolve ou gera o link com seu Tracking ID |
+| SHEIN | Recomendações e pesquisa do painel de afiliados, com sessão local | Conversor oficial de afiliados, sem janela |
+
+### Navegador do Mercado Livre
+
+A coleta de ofertas do ML tenta primeiro o acesso público e depois o **CloakBrowser sem janela**, com um perfil separado em `data/ml_coleta_profile`. Prepare-o em **Operação → Instalar navegador**: essa ação instala Chromium e baixa o CloakBrowser diretamente do fornecedor (aproximadamente 535 MB na primeira instalação). O navegador fica no cache próprio do CloakBrowser, fora do instalador; o ciclo não inicia downloads grandes. Se o CloakBrowser estiver ausente ou falhar, permanece a recuperação pelo perfil salvo do Chrome: primeiro sem janela e, apenas se bloqueado, uma tentativa visível. A pesquisa manual continua no Chrome, e o Linkbuilder continua em segundo plano, em lotes de até 10 URLs no mesmo contexto. Se o site exigir nova verificação, use **Operação → Login do Mercado Livre** e confira ofertas e Linkbuilder antes de fechar. A mensagem de perfil salvo não garante acesso: execute o teste do ML para conferir.
+
+O CloakBrowser é usado na coleta de ofertas e como alternativa para ler os detalhes de um produto no conversor de links, com a versão validada `146.0.7680.177.5` e wrapper `0.6.3`. Na conversão, ele só é iniciado se o acesso simples não fornecer nome, preço ou imagem; usa o perfil separado de coleta e nunca abre janela. Se a leitura falhar, o link afiliado ainda pode ser copiado. O código do wrapper e o binário possuem licenças distintas; o binário não é incluído no instalador. Antes de redistribuir o aplicativo, confira as [condições oficiais de integração e distribuição](https://github.com/CloakHQ/CloakBrowser/blob/main/BINARY-LICENSE.md).
+
+### Creators API da Amazon
+
+Salvar o Credential ID e o Credential Secret permite autenticar, mas o acesso ao catálogo depende também da elegibilidade da conta perante a Amazon. A resposta `AssociateNotEligible` indica que o catálogo não foi liberado; consulte os requisitos no painel de Associados (incluem 10 vendas qualificadas nos últimos 30 dias). Nessa situação, o bot tenta a busca alternativa pelo site e aguarda seis horas para tentar a API novamente.
+
+Sem categorias ou termos específicos selecionados, a API consulta `ofertas` em todas as categorias. Isso não garante resultados em todas as categorias a cada ciclo; a Amazon determina os produtos retornados pela consulta. Categorias selecionadas e termos configurados continuam sendo usados normalmente.
 
 ### Integração com o AliExpress
 
@@ -76,6 +125,8 @@ npm run release:test              # testa a automação da release sem publicar
 ```
 
 `npm run release` gera o instalador, o arquivo `.sig` e o `latest.json` em `desktop/src-tauri/target/release/bundle/nsis`. Depois, cria automaticamente uma GitHub Release em **rascunho**, com título e tag `v<versão>` e uma descrição formada pelas seções posteriores à última release ou rascunho criado. Nenhum arquivo é enviado: você anexa os três arquivos ao rascunho e publica a release manualmente quando estiver pronto.
+
+O build interrompe na primeira etapa com falha, mantendo o motivo original no terminal. As dependências Rust são preservadas por `Cargo.lock` e verificadas com `--locked`. Para mudar a versão do aplicativo, use `npm run set-version -- X.Y.Z`; não substitua números globalmente no lockfile, pois outras dependências podem usar o mesmo número.
 
 Antes da primeira execução, instale e autentique o GitHub CLI:
 

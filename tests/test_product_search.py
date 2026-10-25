@@ -202,6 +202,7 @@ class ProductSearchTests(unittest.TestCase):
         parse.return_value = [offer("mercadolivre", "Tênis Infantil")]
 
         self.assertEqual(len(mercadolivre.buscar_produtos("Tênis Infantil")), 1)
+        self.assertFalse(abrir.call_args.kwargs["headless"])
         self.assertEqual(page.goto.call_args.args[0], "https://lista.mercadolivre.com.br/t%C3%AAnis-infantil")
 
 

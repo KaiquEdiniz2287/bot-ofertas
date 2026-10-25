@@ -149,8 +149,12 @@ impl Backend {
             "test_source",
             "install_browser",
             "start_ml_login",
+            "start_shein_login",
             "get_history",
+            "get_sendai_status",
+            "export_sendai",
             "search_products",
+            "convert_link",
             "import_legacy_data",
             "whatsapp_connect",
             "whatsapp_groups",
@@ -183,7 +187,9 @@ impl Backend {
             "test_source",
             "install_browser",
             "start_ml_login",
+            "start_shein_login",
             "search_products",
+            "convert_link",
             "import_legacy_data",
         ];
         let timeout = if long_running.contains(&command.as_str()) {

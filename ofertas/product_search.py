@@ -11,7 +11,7 @@ from dataclasses import asdict
 from .config import config
 from .formatter import montar_whatsapp
 from .models import Oferta
-from .sources import aliexpress, amazon, mercadolivre, shopee
+from .sources import aliexpress, amazon, mercadolivre, shein, shopee
 
 log = logging.getLogger("ofertas.busca")
 
@@ -20,6 +20,7 @@ _LABELS = {
     "shopee": "Shopee",
     "amazon": "Amazon",
     "aliexpress": "AliExpress",
+    "shein": "SHEIN",
 }
 RESULTS_PER_SOURCE = 3
 _IGNORAR_BUSCA = {"a", "as", "com", "da", "das", "de", "do", "dos", "e", "em", "kit", "o", "os", "para", "por", "um", "uma"}
@@ -68,6 +69,7 @@ def _buscar_fonte(key: str, termo: str) -> list[Oferta]:
         "shopee": shopee.buscar_produtos,
         "amazon": amazon.buscar_produtos,
         "aliexpress": aliexpress.buscar_produtos,
+        "shein": shein.buscar_produtos,
     }
     offers = []
     consultas = _termos_busca(termo)
@@ -82,6 +84,8 @@ def _buscar_fonte(key: str, termo: str) -> list[Oferta]:
         return []
     if offers and key == "mercadolivre":
         mercadolivre.gerar_links_afiliado(offers)
+    if offers and key == "shein":
+        shein.gerar_links_afiliado(offers)
     if offers and key == "aliexpress":
         try:
             aliexpress.gerar_links_afiliado(offers)
@@ -106,6 +110,7 @@ def buscar(termo: str) -> dict:
         "shopee": config.fonte_shopee.get("ativa", False),
         "amazon": config.fonte_amazon.get("ativa", False),
         "aliexpress": config.fonte_aliexpress.get("ativa", False),
+        "shein": config.fonte_shein.get("ativa", False),
     }
     sources = [key for key, active in enabled.items() if active]
     results, errors = [], []

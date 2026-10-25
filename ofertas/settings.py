@@ -146,6 +146,21 @@ def _deep_merge(current: dict, updates: dict) -> dict:
 def _validate_yaml(value: dict) -> None:
     geral = value.get("geral") or {}
     filtros = value.get("filtros") or {}
+    sources = value.get("fontes") or {}
+    if not isinstance(sources, dict):
+        raise SettingsError("As configurações dos marketplaces devem conter um objeto.")
+    for key in ("mercadolivre", "amazon", "shopee", "aliexpress", "shein"):
+        source = sources.get(key, {})
+        if not isinstance(source, dict) or not isinstance(source.get("ativa", False), bool):
+            raise SettingsError(f"A ativação de {key} deve ser ligada ou desligada.")
+    shein = (value.get("fontes") or {}).get("shein") or {}
+    if not isinstance(shein, dict) or not isinstance(shein.get("ativa", False), bool):
+        raise SettingsError("A ativação da SHEIN deve ser ligada ou desligada.")
+    if not isinstance(shein.get("limite", 30), int) or not 1 <= shein.get("limite", 30) <= 40:
+        raise SettingsError("O limite da SHEIN deve ficar entre 1 e 40 produtos.")
+    terms = shein.get("buscas", [])
+    if not isinstance(terms, list) or len(terms) > 100 or any(not isinstance(term, str) or not 2 <= len(term.strip()) <= 200 for term in terms):
+        raise SettingsError("As buscas da SHEIN devem ser uma lista de até 100 termos, cada um com 2 a 200 caracteres.")
     integer_limits = {
         "intervalo_minutos": (0, 10080),
         "intervalo_ciclo_min_minutos": (1, 10080),

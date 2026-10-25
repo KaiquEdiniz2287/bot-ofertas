@@ -1,9 +1,9 @@
-from . import aliexpress, amazon, mercadolivre, shopee
+from . import aliexpress, amazon, mercadolivre, shein, shopee
 
 
 def detectar_fonte(url: str):
     """Retorna o módulo da plataforma dona da URL, ou None."""
-    for mod in (aliexpress, amazon, shopee, mercadolivre):
+    for mod in (aliexpress, amazon, shopee, mercadolivre, shein):
         if mod.e_link(url):
             return mod
     return None

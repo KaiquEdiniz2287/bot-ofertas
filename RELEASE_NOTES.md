@@ -1,3 +1,219 @@
+# 0.21.2 — Consulta da SHEIN pelo catálogo de afiliados
+
+- A coleta automática e a pesquisa da SHEIN passam a usar o catálogo do painel de afiliados, cujo acesso funcionou nos testes em que a busca pública exigia verificação.
+- Reutilizado o perfil salvo do Chrome em segundo plano, com CloakBrowser persistente como alternativa; nenhum navegador novo precisa ser instalado.
+- Preservados os termos das categorias, o rodízio e os filtros existentes. Cada consulta aproveita até duas páginas do painel, com espera limitada e identificação do termo no Console.
+- Preços, imagens, avaliações e vendas são lidos dos produtos do catálogo. Comissão e bônus não são confundidos com preço ou desconto; recomendações sem correspondência com a pesquisa são descartadas.
+- A geração de links continua pelo conversor oficial, e o login passa a abrir também o catálogo usado na coleta.
+- Validadas consultas reais com os dois navegadores, reabertura do perfil, categorias, resultados vazios e quatro links afiliados, sem publicar ofertas.
+
+## Versionamento
+
+Versão: 0.21.1 → 0.21.2
+Tipo: PATCH
+Motivo: correção compatível da consulta da SHEIN, mantendo os demais marketplaces e o fluxo de publicação.
+
+---
+
+# 0.21.1 — Coleta estável da SHEIN em segundo plano
+
+- A coleta e a pesquisa da SHEIN passam a começar pelo CloakBrowser sem janela, com perfil persistente próprio; o Chrome oculto permanece como alternativa.
+- Corrigida a leitura prematura da vitrine: cartões iniciais sem link não encerram mais a consulta antes de os produtos completos carregarem. A espera é limitada a 20 segundos, sem novas requisições de página durante a leitura.
+- O perfil do CloakBrowser preserva os dados entre consultas e sincroniza a sessão da SHEIN após um novo login, em vez de descartá-la a cada tentativa.
+- Mantida a conversão de links pelo Chrome sem janela como primeira opção, com recuperação pelo CloakBrowser persistente.
+- Melhoradas as mensagens para distinguir carregamento incompleto, verificação da SHEIN e falha do navegador; removido o texto de navegação do rótulo usado como título em alguns cartões.
+- Validados dois acessos consecutivos às ofertas, busca com três links afiliados reais e conversão avulsa, em perfil isolado e sem publicar mensagens.
+
+## Versionamento
+
+Versão: 0.21.0 → 0.21.1
+Tipo: PATCH
+Motivo: correção compatível da sessão e do carregamento de dados da SHEIN.
+
+---
+
+# 0.21.0 — Seleção de marketplaces e configurações organizadas
+
+- Mercado Livre, Amazon, Shopee e AliExpress ganharam subblocos próprios no bloco 02 das configurações, com credenciais e interruptores de ativação.
+- A seleção é salva para o ciclo automático e a busca manual, preservando chaves, sessões, categorias e demais parâmetros; a SHEIN continua em seu bloco separado.
+- Rascunhos dos interruptores são preservados durante atualizações do app e ao executar ações de preparação.
+- Corrigido o visto verde de perfil salvo no login da SHEIN em Operação e Configurações, mantendo a distinção entre perfil local e acesso validado por teste.
+- Consultas bem-sucedidas de mensagens do Telegram passaram a usar uma descrição familiar no Console. Falhas e outras requisições continuam visíveis.
+- Reativar uma fonte após iniciar o bot com todas desligadas agenda o primeiro ciclo sem alterar pausas existentes nem criar ciclos concorrentes.
+
+## Versionamento
+
+Versão: 0.20.0 → 0.21.0
+Tipo: MINOR
+Motivo: adição compatível de controles individuais de ativação de marketplaces na interface.
+
+---
+
+# 0.20.0 — Integração de afiliados da SHEIN
+
+- Adicionado módulo independente para coleta de Super Ofertas, pesquisa por produto e conversão de links da SHEIN.
+- Login local exclusivo em Operação, com sessão separada do Mercado Livre; não exige App Key nem cópia manual de cookies.
+- Consultas e conversões tentam Chrome sem janela e usam CloakBrowser como alternativa. Somente a preparação de login solicitada pelo usuário abre janela.
+- Nova opção nas configurações inclui a SHEIN no ciclo e na busca manual; permanece desativada até ser habilitada pelo usuário.
+- Categorias e filtros existentes também se aplicam à SHEIN. Links são gerados apenas para as ofertas escolhidas ou os melhores resultados da busca.
+- A conversão usa o retorno oficial para obter link afiliado, nome, imagem, preços, avaliação e vendas disponíveis.
+- Bloqueios e sessões expiradas geram orientação no Console; falhas da SHEIN não interrompem as demais plataformas.
+- Adicionados teste isolado, identificação visual, suporte no conversor do aplicativo e nos comandos de terminal.
+
+## Versionamento
+
+Versão: 0.19.1 → 0.20.0
+Tipo: MINOR
+Motivo: adição compatível de uma nova plataforma de afiliados.
+
+---
+
+# 0.19.1 — Dados do produto do Mercado Livre no conversor
+
+- Quando o acesso simples não retorna nome, preço ou imagem, o conversor consulta o produto com CloakBrowser sem abrir janela.
+- Páginas de verificação deixam de ser tratadas como páginas de produto; links compartilhados com redirecionamento tardio recebem uma tentativa limitada de recuperação da leitura.
+- Preservados os centavos dos preços atual e anterior na extração dos valores visíveis.
+- Se os dados continuarem indisponíveis, o link afiliado permanece disponível e os avisos também aparecem no Console.
+- Linkbuilder, coleta automática, pesquisa e demais plataformas mantêm seus fluxos existentes.
+- Validada a leitura real do produto informado e a montagem do texto em perfil temporário, sem publicar ou acessar a sessão ativa do Linkbuilder.
+
+## Versionamento
+
+Versão: 0.19.0 → 0.19.1
+Tipo: PATCH
+Motivo: correção compatível da coleta de dados na conversão de links do Mercado Livre.
+
+---
+
+# 0.19.0 — Conversor de links no aplicativo
+
+- Nova aba Converter link para Mercado Livre, Shopee, Amazon e AliExpress, com identificação automática da plataforma.
+- Usa as credenciais de afiliado já salvas e oferece cópia do link e da oferta formatada quando os detalhes estão disponíveis.
+- Conversões avulsas funcionam com o bot ativo, sem publicar mensagens nem registrar ofertas no histórico.
+- Acesso ao perfil do Mercado Livre coordenado com o Linkbuilder; conversões duplicadas são bloqueadas enquanto uma está em andamento.
+- Mensagens claras para links inválidos, configuração incompleta, falhas e detalhes indisponíveis.
+- O campo preserva texto e foco durante atualizações do aplicativo; a tela se adapta às larguras menores.
+
+## Versionamento
+
+Versão: 0.18.6 → 0.19.0
+Tipo: MINOR
+Motivo: adição compatível de uma nova aba de conversão avulsa.
+
+---
+
+# 0.18.6 — CloakBrowser exclusivo para coleta de ofertas do Mercado Livre
+
+- Após a tentativa de acesso público, a coleta usa o CloakBrowser sem janela, com perfil separado do login e do Linkbuilder.
+- O botão Instalar navegador prepara Chromium e CloakBrowser; o download do novo navegador ocorre diretamente do fornecedor, fora do instalador e do ciclo de ofertas.
+- Se a coleta pelo CloakBrowser falhar ou ele ainda não estiver instalado, permanece a recuperação pelo navegador padrão.
+- A pesquisa manual, a geração de links afiliados e as demais plataformas mantêm o comportamento anterior.
+- Adicionados testes de isolamento, parâmetros de categoria e paginação, encerramento do navegador, instalação e recuperação de falhas.
+
+## Versionamento
+
+Versão: 0.18.5 → 0.18.6
+Tipo: PATCH
+Motivo: melhoria compatível no navegador usado internamente pela coleta existente.
+
+---
+
+# 0.18.5 — Coleta do Mercado Livre tenta primeiro em segundo plano
+
+- A coleta de ofertas volta a tentar o Chrome sem janela com o perfil salvo, depois da tentativa pública já existente.
+- Se o acesso em segundo plano for bloqueado ou redirecionado à verificação da conta, o contexto é fechado antes de uma única tentativa com Chrome visível.
+- Se a coleta oculta funcionar, nenhuma janela é aberta. Timeout e indisponibilidade do servidor não acionam a tentativa visível.
+- O console informa quando há necessidade de abrir a janela. A geração de links permanece escondida e a pesquisa manual mantém seu comportamento anterior.
+- Testes cobrem sucesso oculto, bloqueio com alternativa visível, encerramento dos contextos e falha nos dois modos sem repetição ilimitada.
+
+## Versionamento
+
+Versão: 0.18.4 → 0.18.5
+Tipo: PATCH
+Motivo: ajuste compatível para abrir a janela da coleta somente quando houver bloqueio no modo oculto.
+
+---
+
+# 0.18.4 — Linkbuilder do Mercado Livre em segundo plano
+
+- A geração de links afiliados do Mercado Livre volta a funcionar sem janela visível, usando o perfil já salvo.
+- Os links continuam sendo gerados em lotes, no mesmo contexto, sem abrir um navegador para cada postagem.
+- A coleta de ofertas e a pesquisa de produtos mantêm o Chrome visível, preservando o modo que funcionou na validação local.
+- Ajustado o teste de regressão para conferir três links em um único contexto sem janela.
+
+## Versionamento
+
+Versão: 0.18.3 → 0.18.4
+Tipo: PATCH
+Motivo: correção compatível para limitar as janelas visíveis às consultas de produtos do Mercado Livre.
+
+---
+
+# 0.18.3 — Acesso do Mercado Livre pelo Chrome visível
+
+- A coleta de ofertas, a pesquisa manual e a geração de links do Mercado Livre passam a usar o Chrome visível com o perfil salvo. Na verificação local, o modo sem janela recebia `/captcha/wall/logged`, enquanto o modo visível retornava 48 produtos com o mesmo perfil.
+- A janela do navegador abre durante a operação e fecha ao concluir; o console informa esse comportamento.
+- O login abre o Linkbuilder e a página de ofertas para conferência manual. Ao fechar, a mensagem informa que o perfil foi salvo e orienta executar o teste, sem afirmar que o acesso já foi validado.
+- Validação real: 48 ofertas coletadas e um link de afiliado gerado pelo Linkbuilder. Novas verificações exigidas pelo site continuam dependendo da conclusão manual pelo usuário.
+- As integrações Amazon, Shopee, AliExpress, Telegram e WhatsApp permanecem inalteradas.
+
+## Versionamento
+
+Versão: 0.18.2 → 0.18.3
+Tipo: PATCH
+Motivo: correção compatível do modo de acesso ao Mercado Livre usando o perfil existente.
+
+---
+
+# 0.18.2 — Correção do empacotamento de release
+
+- Restauradas as versões corretas de `gobject-sys`, `gdk-pixbuf-sys` e `pango-sys` no Cargo.lock. Essas dependências haviam sido alteradas indevidamente junto da versão do aplicativo, impedindo a resolução pelo Cargo.
+- O build para imediatamente quando testes Python, da interface ou Rust falham, informando a etapa e o código de erro original.
+- Falhas de preparação ou empacotamento do backend interrompem o processo antes de reutilizar um executável antigo.
+- Os testes Rust e o build Tauri usam `--locked`, preservando as versões de dependências registradas no projeto.
+- Os scripts PowerShell alterados usam UTF-8 com BOM e executam o Python em UTF-8 para preservar os diagnósticos com acentos.
+
+## Versionamento
+
+Versão: 0.18.1 → 0.18.2
+Tipo: PATCH
+Motivo: correção compatível das dependências e da interrupção de falhas no release.
+
+---
+
+# 0.18.1 — Consulta e diagnóstico da Creators API da Amazon
+
+- Corrigido o retorno imediato de zero ofertas ao usar credenciais da Amazon sem categorias ou termos configurados. Esse modo agora executa uma busca geral por ofertas em todas as categorias.
+- Configurações existentes de categorias, termos e desconto permanecem respeitadas; o número de páginas da API fica entre 1 e 10.
+- Recusas do catálogo, incluindo `AssociateNotEligible`, são identificadas pelo motivo retornado pela Amazon; o console explica a restrição e a tentativa alternativa pelo site.
+- Erros declarados pela API em respostas HTTP 200 deixam de aparecer como simples ausência de produtos.
+- Verificação real: autenticação aceita (HTTP 200), catálogo recusado por elegibilidade (HTTP 403) e 48 ofertas obtidas pela busca alternativa no site. Credenciais e dados da instalação não foram alterados.
+
+## Versionamento
+
+Versão: 0.18.0 → 0.18.1
+Tipo: PATCH
+Motivo: correção compatível da consulta geral e dos diagnósticos da Amazon.
+
+---
+
+# 0.18.0 — Exportação de ofertas para o SendAiPlus
+
+- Adicionado o botão **Exportar SendAi** em cada oferta do Histórico e em cada resultado da busca de produtos.
+- O botão fica disponível quando o SendAiPlus atualizado está aberto no mesmo computador e usuário, inclusive na bandeja.
+- A oferta cria um post ativo **Texto com link**, com o nome do produto, sem título opcional e com o texto formatado completo, preservando links, acentos e emojis.
+- O sucesso só é informado após a confirmação de salvamento. Cliques repetidos e novas tentativas na mesma sessão não duplicam o post.
+- A integração não publica mensagens, não seleciona posts no respondedor e não altera pesquisa, ciclos ou envios existentes.
+- Requer SendAiPlus 0.12.0 ou superior.
+
+## Versionamento
+
+Versão: 0.17.2 → 0.18.0
+Tipo: MINOR
+Motivo: nova integração local e compatível para exportar ofertas.
+
+---
+
 # 0.17.2 — Diagnósticos reais na busca de produtos
 
 - A busca manual identifica o bloqueio `/captcha/wall/logged` do Mercado Livre e orienta a concluir a verificação no navegador, sem confundi-lo com ausência de produtos.

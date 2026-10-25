@@ -65,3 +65,8 @@ fontes:
     ativa: true
     limite: 40                 # total de produtos afiliáveis consultados por ciclo
     buscas: []                 # vazio = produtos em alta; os nichos usam termos equivalentes à Shopee
+
+  shein:
+    ativa: false               # ative no aplicativo após preparar o Login da SHEIN
+    limite: 30                 # links afiliados são gerados somente para as ofertas escolhidas
+    buscas: []                 # vazio = Super Ofertas; categorias selecionadas usam palavras-chave

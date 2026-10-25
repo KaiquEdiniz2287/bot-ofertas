@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 from ofertas.desktop_protocol import PublicError
 from ofertas.desktop_service import DesktopService
@@ -22,6 +22,27 @@ class RunningRuntime:
 
 
 class DesktopServiceTests(unittest.IsolatedAsyncioTestCase):
+    async def test_salvar_fontes_nao_agenda_outro_ciclo_durante_execucao(self):
+        runtime=RunningRuntime()
+        runtime.ensure_cycle_scheduled=Mock()
+        service=DesktopService(CaptureEmitter(),runtime)
+        with patch("ofertas.desktop_service.write_settings"),patch.object(service,"_emit_state"):
+            service._runtime_state["cycleRunning"]=True
+            await service._save_settings({"config":{"fontes":{"amazon":{"ativa":False}}}})
+            runtime.ensure_cycle_scheduled.assert_not_called()
+            service._runtime_state["cycleRunning"]=False
+            await service._save_settings({"config":{"fontes":{"amazon":{"ativa":True}}}})
+            runtime.ensure_cycle_scheduled.assert_called_once()
+
+    async def test_exportacao_sendai_independe_do_ciclo_em_execucao(self):
+        service = DesktopService(CaptureEmitter(), RunningRuntime())
+        async with service._action_lock:
+            with patch("ofertas.sendai_export.export_offer", return_value={"postId": "local"}) as export:
+                response = await service.handle({"id": "export", "command": "export_sendai", "payload": {"id": "local"}})
+        self.assertTrue(response["ok"])
+        export.assert_called_once_with({"id": "local"})
+        self.assertTrue(service.runtime.running)
+
     async def test_fonte_sem_ofertas_nao_informa_sucesso(self):
         emitter = CaptureEmitter()
         service = DesktopService(emitter, RunningRuntime())

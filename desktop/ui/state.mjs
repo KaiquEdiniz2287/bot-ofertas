@@ -4,9 +4,10 @@ export function createState() {
     settings:null, history:[], whatsappStatus:"DISCONNECTED", whatsappAccount:"", whatsappQr:"",
     whatsappGroups:[], pending:[], cycleRunning:false, pauseUntil:null, pauseKind:null, pauseDurationSeconds:null,
     nextCycleAt:null, cycleWaitSeconds:null, whatsappRetryAt:null, whatsappNetworkUnavailable:false,
-    whatsappRetryAttempt:0, whatsappRetryMax:5, browserInstalled:false, mlSessionDetected:false,
+    whatsappRetryAttempt:0, whatsappRetryMax:5, browserInstalled:false, mlSessionDetected:false, sheinSessionDetected:false,
     cycleIntervalRangeSeconds:null, postSpacingRangeSeconds:null, currentAction:null, sessionActions:{},
     productSearch:{query:"",loading:false,results:[],errors:[],searched:false},
+    linkConversion:{url:"",loading:false,result:null,error:""},
   };
 }
 export function appendLog(state, log) {

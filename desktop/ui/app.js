@@ -1,10 +1,15 @@
 import {createState,appendLog,applyBackendState,startSessionAction,finishSessionAction,runPlatformTests} from "./state.mjs";
+import {createSendAiExporter} from "./sendai.mjs";
+import {converterView,detectPlatform} from "./converter.mjs";
+import {sheinSettings} from "./shein.mjs";
+import {marketplaceSettings,marketplaceFlags,captureMarketplaceConfig} from "./marketplaces.mjs";
 
 const {invoke}=window.__TAURI__.core,{listen}=window.__TAURI__.event;
 const $=selector=>document.querySelector(selector);
 const pageInfo={
   overview:["Visão geral","Acompanhe a operação e a saúde do bot."],
   search:["Buscar produtos","Compare os melhores resultados afiliados de cada plataforma sem interromper o bot."],
+  convert:["Converter link","Transforme um link de produto no seu link de afiliado."],
   operation:["Operação","Execute e teste cada fonte com segurança."],
   settings:["Configurações","Credenciais e preferências ficam somente neste computador."],
   whatsapp:["WhatsApp","Conexão, grupo, Canal e envios que aguardam sua decisão."],
@@ -12,7 +17,28 @@ const pageInfo={
   console:["Console ao vivo","Eventos do backend em tempo real."],
 };
 let state=createState(),updateVersion="",updateReady=false,toastTimer,logFilter="all",batchRunning=false,batchIndex=0;
-const platformTests=["ml","shopee","amazon","aliexpress"];
+let platformTests=["ml","shopee","amazon","aliexpress"];
+const sendai=createSendAiExporter(invoke,updateSendAiButtons);
+
+function sendAiOffer(kind,index){
+  const item=kind==="history"?state.history[index]:state.productSearch.results[index];
+  return kind==="history"?{name:item?.titulo,content:item?.texto}:{name:item?.offer?.titulo,content:item?.text};
+}
+function sendAiButton(kind,index){
+  const status=sendai.status(sendAiOffer(kind,index));
+  return `<button type="button" class="button secondary" data-sendai-kind="${kind}" data-sendai-index="${index}" title="${escapeHtml(status.title)}" ${status.disabled?"disabled":""}>${status.label}</button>`;
+}
+function updateSendAiButtons(){
+  document.querySelectorAll("[data-sendai-kind]").forEach(button=>{
+    const status=sendai.status(sendAiOffer(button.dataset.sendaiKind,Number(button.dataset.sendaiIndex)));
+    button.disabled=status.disabled;button.textContent=status.label;button.title=status.title;
+  });
+  document.querySelectorAll("[data-sendai-status]").forEach(element=>element.textContent=sendai.ready?"SendAiPlus conectado · Exporte para a biblioteca de posts, sem enviar mensagens.":"Para exportar, abra o SendAiPlus atualizado neste computador (pode ficar na bandeja).");
+}
+async function exportSendAi(button){
+  try{if(await sendai.export(sendAiOffer(button.dataset.sendaiKind,Number(button.dataset.sendaiIndex))))toast("Post salvo no SendAiPlus: Texto com link, ativo e sem título opcional.")}
+  catch(error){toast(String(error),true);void sendai.refresh()}
+}
 
 async function request(command,payload={}){
   try{return await invoke("backend_request",{command,payload})}
@@ -39,7 +65,7 @@ function field(key,label,env,secret=false){const configured=env[key]==="__CONFIG
 function visibleLogs(){return state.logs.filter(log=>{const source=String(log.source||"").toLowerCase();return logFilter==="all"||logFilter==="conexao"&&source.includes("whatsapp")||logFilter==="ofertas"&&!source.includes("whatsapp")})}
 function logText(){return visibleLogs().map(log=>`${log.timestamp||""} ${log.level||"INFO"} ${log.source||""}: ${log.message||""}${log.count>1?` (repetido ${log.count}×)`:""}`).join("\n")}
 function brand(name,label,className=""){return `<img class="brand-logo ${className}" src="brands/${name}.svg" alt="${label}" title="${label}">`}
-function platformBrand(value){const key=String(value||"").toLowerCase();if(key.includes("mercado"))return brand("mercadolivre","Mercado Livre","tiny");if(key.includes("shopee"))return brand("shopee","Shopee","tiny");if(key.includes("amazon"))return brand("amazon","Amazon","tiny");if(key.includes("aliexpress"))return brand("aliexpress","AliExpress","tiny");return""}
+function platformBrand(value){const key=String(value||"").toLowerCase();if(key.includes("mercado"))return brand("mercadolivre","Mercado Livre","tiny");if(key.includes("shopee"))return brand("shopee","Shopee","tiny");if(key.includes("amazon"))return brand("amazon","Amazon","tiny");if(key.includes("aliexpress"))return brand("aliexpress","AliExpress","tiny");if(key.includes("shein"))return brand("shein","SHEIN","tiny");return""}
 
 const operationInfo={
   cycle:{label:"Execução manual do ciclo",running:"Buscando e processando ofertas. As publicações podem ocorrer agora.",success:"Ciclo encerrado; consulte o console para ver quantas ofertas foram publicadas."},
@@ -47,6 +73,8 @@ const operationInfo={
   shopee:{label:"Teste da Shopee",running:"Consultando a integração da Shopee…",success:"Teste da Shopee concluído nesta sessão."},
   amazon:{label:"Teste da Amazon",running:"Validando credenciais e consulta da Amazon…",success:"Teste da Amazon concluído nesta sessão."},
   aliexpress:{label:"Teste do AliExpress",running:"Consultando ofertas e links afiliados do AliExpress…",success:"Teste do AliExpress concluído nesta sessão."},
+  shein:{label:"Teste da SHEIN",running:"Consultando ofertas e validando um link de afiliado da SHEIN sem publicar…",success:"Busca e conversão da SHEIN concluídas nesta sessão."},
+  "login-shein":{label:"Login da SHEIN",running:"Faça login na janela da SHEIN, confira o conversor e feche o navegador…",success:"Perfil da SHEIN salvo. Execute o teste para confirmar o acesso."},
   login:{label:"Login do Mercado Livre",running:"Aguardando você concluir o login e fechar a janela do navegador…",success:"Janela de login encerrada e perfil local atualizado."},
   browser:{label:"Instalação do Chromium",running:"Baixando e preparando o navegador das automações…",success:"Chromium instalado e pronto para uso."},
 };
@@ -95,6 +123,9 @@ function updateLogView(){
 }
 
 function render(){
+  platformTests=["ml","shopee","amazon","aliexpress",...(state.settings?.config?.fontes?.shein?.ativa?["shein"]:[])];
+  const converterInput=document.activeElement?.id==="convert-url"?document.activeElement:null;
+  const converterSelection=converterInput?[converterInput.selectionStart,converterInput.selectionEnd]:null;
   const previousLog=$("#live-log");
   const scrollState=previousLog?{top:previousLog.scrollTop,follow:previousLog.scrollHeight-previousLog.scrollTop-previousLog.clientHeight<48}:null;
   const [title,subtitle]=pageInfo[state.page];
@@ -116,11 +147,12 @@ function render(){
     const statusLabel=state.botRunning?"Em execução":state.ready?"Pronto":"Requer configuração";
     content.innerHTML=`<div class="page-stack"><section class="hero-card dashboard-hero"><div><span class="eyebrow">CENTRAL DE AUTOMAÇÃO</span><h2>${state.botRunning?"Seu bot está trabalhando.":"Tudo sob seu controle."}</h2><p>${state.ready?"Execute o ciclo, acompanhe os canais e confira os próximos tempos sem sair desta tela.":"Complete Telegram e afiliados para começar a publicar ofertas."}</p><div class="channel-row"><span>${brand("telegram","Telegram","small")} Telegram <b class="${state.ready?"ok":""}">${state.ready?"configurado":"pendente"}</b></span><span>${brand("whatsapp","WhatsApp","small")} WhatsApp <b class="${state.whatsappStatus==="CONNECTED"?"ok":""}">${whatsappLabel(state.whatsappStatus)}</b></span></div></div><div class="hero-controls"><span class="hero-orb ${state.botRunning?"active":""}" aria-hidden="true">↗</span><button class="button primary cycle-button" data-action="cycle" ${state.actionRunning||!state.ready?"disabled":""}>${state.actionRunning?"Operação em andamento":"Executar ciclo agora"}</button><small>Pode publicar ofertas nos canais ativos.</small></div></section>${timerStrip(true)}<div class="metric-grid"><article class="metric-card"><span class="metric-icon">●</span><div><small>Estado atual</small><strong>${statusLabel}</strong></div></article><article class="metric-card"><span class="metric-icon">◷</span><div><small>Próximo ciclo</small><strong class="countdown" data-countdown="next">${formatCountdown(state.nextCycleAt)}</strong><span class="metric-detail">${state.cycleIntervalRangeSeconds?`Faixa ${formatRange(state.cycleIntervalRangeSeconds)}${state.cycleWaitSeconds?` · sorteado ${formatDuration(state.cycleWaitSeconds)}`:""}`:"Agendamento desativado"}</span></div></article><article class="metric-card"><span class="metric-icon">!</span><div><small>Pendências manuais</small><strong>${state.pendingDeliveries||0}</strong></div></article><article class="metric-card wide"><span class="metric-icon">⌂</span><div><small>Diretório de dados</small><strong class="path">${escapeHtml(state.dataDir||"—")}</strong></div></article></div><section class="panel next-step"><div><span class="section-kicker">${state.pauseUntil?"PAUSA EM ANDAMENTO":"ACESSO RÁPIDO"}</span><h3>${state.pauseUntil?`Retomada em <span data-countdown="pause">${formatCountdown(state.pauseUntil)}</span>`:state.ready?"Valide as integrações quando precisar":"Finalize as credenciais essenciais"}</h3><p>${state.pauseUntil?`Horário previsto: ${formatDate(state.pauseUntil)}.`:state.ready?"Os testes e indicadores permanentes ficam reunidos na área Operação.":"Abra Configurações e preencha o token, o proprietário e o canal do Telegram."}</p></div><button class="button secondary" data-page-link="${state.pendingDeliveries?"whatsapp":state.ready?"operation":"settings"}">${state.pendingDeliveries?"Ver pendências":state.ready?"Ver operações":"Abrir configurações"} →</button></section></div>`;
   }
+  if(state.page==="convert")content.innerHTML=converterView(state.linkConversion,platformBrand,state.connected);
   if(state.page==="search"){
     const search=state.productSearch;
-    const cards=search.results.map((result,index)=>{const offer=result.offer||{};return `<article class="search-result-card"><div class="result-media">${offer.imagem?`<img src="${escapeHtml(offer.imagem)}" alt="" loading="lazy" onerror="this.hidden=true;this.nextElementSibling.hidden=false"><span hidden>${platformBrand(result.platform)}</span>`:`<span>${platformBrand(result.platform)}</span>`}</div><div class="result-body"><div class="result-platform">${platformBrand(result.platform)}<strong>${escapeHtml(result.label)}</strong><span>Top ${Number(result.rank)||1}</span></div><h3>${escapeHtml(offer.titulo)}</h3><div class="result-price"><strong>${formatPrice(offer.preco)}</strong>${offer.preco_original?`<s>${formatPrice(offer.preco_original)}</s>`:""}${offer.desconto_pct?`<b>-${Number(offer.desconto_pct)}%</b>`:""}</div>${offer.extra?`<p class="result-extra">${escapeHtml(offer.extra)}</p>`:""}<details><summary>Ver texto pronto</summary><pre>${escapeHtml(result.text)}</pre></details><div class="result-actions"><button class="button primary" data-copy-result="${index}">Copiar oferta completa</button><a class="button ghost" href="${escapeHtml(offer.url_afiliado)}" target="_blank" rel="noreferrer">Abrir produto ↗</a></div></div></article>`}).join("");
+    const cards=search.results.map((result,index)=>{const offer=result.offer||{};return `<article class="search-result-card"><div class="result-media">${offer.imagem?`<img src="${escapeHtml(offer.imagem)}" alt="" loading="lazy" onerror="this.hidden=true;this.nextElementSibling.hidden=false"><span hidden>${platformBrand(result.platform)}</span>`:`<span>${platformBrand(result.platform)}</span>`}</div><div class="result-body"><div class="result-platform">${platformBrand(result.platform)}<strong>${escapeHtml(result.label)}</strong><span>Top ${Number(result.rank)||1}</span></div><h3>${escapeHtml(offer.titulo)}</h3><div class="result-price"><strong>${formatPrice(offer.preco)}</strong>${offer.preco_original?`<s>${formatPrice(offer.preco_original)}</s>`:""}${offer.desconto_pct?`<b>-${Number(offer.desconto_pct)}%</b>`:""}</div>${offer.extra?`<p class="result-extra">${escapeHtml(offer.extra)}</p>`:""}<details><summary>Ver texto pronto</summary><pre>${escapeHtml(result.text)}</pre></details><div class="result-actions"><button class="button primary" data-copy-result="${index}">Copiar oferta completa</button>${sendAiButton("search",index)}<a class="button ghost" href="${escapeHtml(offer.url_afiliado)}" target="_blank" rel="noreferrer">Abrir produto ↗</a></div></div></article>`}).join("");
     const errors=search.errors.length?`<section class="search-notices"><strong>Plataformas sem resultado nesta busca</strong>${search.errors.map(error=>`<div>${platformBrand(error.platform)}<span><b>${escapeHtml(error.label)}</b>${escapeHtml(error.message)}</span></div>`).join("")}</section>`:"";
-    content.innerHTML=`<div class="page-stack search-page"><section class="search-hero"><div><span class="section-kicker">PESQUISA AVULSA</span><h2>Encontre ofertas prontas para compartilhar</h2><p>A pesquisa acontece separada do ciclo automático: não publica, não entra no histórico e não pausa o bot.</p></div><form id="product-search-form" class="search-box"><label for="product-query">Qual produto você procura?</label><div><input id="product-query" name="query" value="${escapeHtml(search.query)}" placeholder="Ex.: fone bluetooth, air fryer, notebook…" minlength="2" autocomplete="off" required><button class="button primary" type="submit" ${search.loading?"disabled":""}>${search.loading?"Pesquisando…":"Pesquisar"}</button></div><small>Consultaremos simultaneamente as plataformas ativas.</small></form></section>${search.loading?`<section class="search-loading"><i></i><div><strong>Procurando as melhores opções…</strong><span>Você pode deixar o bot funcionando normalmente.</span></div></section>`:""}${!search.loading&&search.searched?`<div class="search-summary"><div><span class="section-kicker">RESULTADOS</span><h2>${search.results.length?`${search.results.length} oferta(s) pronta(s) para copiar`:"Nenhuma oferta pronta"}</h2></div><span>Pesquisa: <strong>${escapeHtml(search.query)}</strong></span></div><div class="search-results">${cards}</div>${errors}`:`<section class="search-empty"><span>⌕</span><h3>Uma busca, as melhores opções</h3><p>Digite o produto para receber até três resultados de Mercado Livre, Shopee, Amazon e AliExpress.</p></section>`}</div>`;
+    content.innerHTML=`<div class="page-stack search-page"><section class="search-hero"><div><span class="section-kicker">PESQUISA AVULSA</span><h2>Encontre ofertas prontas para compartilhar</h2><p>A pesquisa acontece separada do ciclo automático: não publica, não entra no histórico e não pausa o bot.</p></div><form id="product-search-form" class="search-box"><label for="product-query">Qual produto você procura?</label><div><input id="product-query" name="query" value="${escapeHtml(search.query)}" placeholder="Ex.: fone bluetooth, air fryer, notebook…" minlength="2" autocomplete="off" required><button class="button primary" type="submit" ${search.loading?"disabled":""}>${search.loading?"Pesquisando…":"Pesquisar"}</button></div><small>Consultaremos simultaneamente as plataformas ativas.</small></form></section>${search.loading?`<section class="search-loading"><i></i><div><strong>Procurando as melhores opções…</strong><span>Você pode deixar o bot funcionando normalmente.</span></div></section>`:""}${!search.loading&&search.searched?`<div class="search-summary"><div><span class="section-kicker">RESULTADOS</span><h2>${search.results.length?`${search.results.length} oferta(s) pronta(s) para copiar`:"Nenhuma oferta pronta"}</h2></div><span>Pesquisa: <strong>${escapeHtml(search.query)}</strong></span></div><p class="sendai-status" data-sendai-status></p><div class="search-results">${cards}</div>${errors}`:`<section class="search-empty"><span>⌕</span><h3>Uma busca, as melhores opções</h3><p>Digite o produto para receber até três resultados de Mercado Livre, Shopee, Amazon e AliExpress.</p></section>`}</div>`;
   }
   if(state.page==="operation"){
     const busy=state.actionRunning||batchRunning,disabled=busy?"disabled":"";
@@ -133,12 +165,14 @@ function render(){
           <button class="action-card ${state.sessionActions.shopee?"completed":""}" data-action="shopee" ${disabled}><span class="action-icon logo">${brand("shopee","Shopee")}</span><span><strong>Testar Shopee</strong><small>Consulta a integração e retorna até 10 ofertas.</small>${actionBadge("shopee")}</span><b>${state.sessionActions.shopee?"✓":"→"}</b></button>
           <button class="action-card ${state.sessionActions.amazon?"completed":""}" data-action="amazon" ${disabled}><span class="action-icon logo">${brand("amazon","Amazon")}</span><span><strong>Testar Amazon</strong><small>Verifica credenciais e busca automática.</small>${actionBadge("amazon")}</span><b>${state.sessionActions.amazon?"✓":"→"}</b></button>
           <button class="action-card ${state.sessionActions.aliexpress?"completed":""}" data-action="aliexpress" ${disabled}><span class="action-icon logo">${brand("aliexpress","AliExpress")}</span><span><strong>Testar AliExpress</strong><small>Valida ofertas em BRL e links de afiliado.</small>${actionBadge("aliexpress")}</span><b>${state.sessionActions.aliexpress?"✓":"→"}</b></button>
+          <button class="action-card ${state.sessionActions.shein?"completed":""}" data-action="shein" ${disabled}><span class="action-icon logo">${brand("shein","SHEIN")}</span><span><strong>Testar SHEIN</strong><small>Consulta produtos e converte um link sem publicar.</small>${actionBadge("shein")}</span><b>${state.sessionActions.shein?"✓":"→"}</b></button>
         </div>
       </section>
       <section class="panel"><div class="section-head"><div><span class="section-kicker">PREPARAÇÃO DO AMBIENTE</span><h2>Acesso e navegador</h2><p>Use estas ferramentas quando precisar preparar ou renovar o acesso do Mercado Livre.</p></div></div>
         <div class="action-grid">
           <button class="action-card ${state.mlSessionDetected?"completed":""}" data-action="login" ${disabled}><span class="action-icon logo">${brand("mercadolivre","Mercado Livre")}</span><span><strong>Login Mercado Livre</strong><small>${state.mlSessionDetected?"Perfil local detectado; abra novamente se a sessão expirar.":"Abre a sessão local necessária ao Linkbuilder."}</small>${actionBadge("login",state.mlSessionDetected)}</span><b>${state.mlSessionDetected?"✓":"→"}</b></button>
-          <button class="action-card ${state.browserInstalled?"completed":""}" data-action="browser" ${disabled}><span class="action-icon logo">${brand("chrome","Chromium")}</span><span><strong>Instalar navegador</strong><small>${state.browserInstalled?"Chromium detectado no diretório de dados.":"Prepara o Chromium usado pelas automações."}</small>${actionBadge("browser",state.browserInstalled)}</span><b>${state.browserInstalled?"✓":"→"}</b></button>
+          <button class="action-card ${state.browserInstalled?"completed":""}" data-action="browser" ${disabled}><span class="action-icon logo">${brand("chrome","Chromium")}</span><span><strong>Instalar navegador</strong><small>${state.browserInstalled?"Chromium e CloakBrowser prontos.":"Prepara o Chromium e a coleta do ML sem janela. O primeiro download pode demorar."}</small>${actionBadge("browser",state.browserInstalled)}</span><b>${state.browserInstalled?"✓":"→"}</b></button>
+          <button class="action-card ${state.sheinSessionDetected?"completed":""}" data-action="login-shein" ${disabled}><span class="action-icon logo">${brand("shein","SHEIN")}</span><span><strong>Login da SHEIN</strong><small>${state.sheinSessionDetected?"Perfil salvo; execute o teste para validar a sessão.":"Prepare a conta de afiliado em uma janela exclusiva."}</small>${actionBadge("login-shein",state.sheinSessionDetected)}</span><b>${state.sheinSessionDetected?"✓":"→"}</b></button>
         </div>
       </section>
     </div>`;
@@ -147,7 +181,7 @@ function render(){
     content.innerHTML=`<div class="page-stack console-page">${timerStrip()}<section class="console-panel"><div class="console-toolbar"><div><span class="section-kicker">BACKEND</span><h2>Eventos em tempo real <b id="log-count" class="count-badge">${visibleLogs().length}</b></h2><p>O console mantém sua posição enquanto novos eventos chegam.</p></div><div class="toolbar-actions"><label class="log-filter-label">Origem <select id="log-filter"><option value="all" ${logFilter==="all"?"selected":""}>Todos</option><option value="ofertas" ${logFilter==="ofertas"?"selected":""}>Ofertas</option><option value="conexao" ${logFilter==="conexao"?"selected":""}>Conexão</option></select></label><button class="button ghost" data-action="clear">Limpar</button><button class="button secondary" data-action="export">Copiar diagnóstico</button></div></div><div class="log" id="live-log" role="log" aria-live="polite"></div><footer class="console-footer"><span><i></i> ${state.connected?"Conectado ao backend local":"Backend desconectado"}</span><span>Erros consecutivos iguais são agrupados</span></footer></section></div>`;
   }
   if(state.page==="history"){
-    content.innerHTML=`<section class="panel"><div class="section-head"><div><span class="section-kicker">REGISTROS</span><h2>Ofertas publicadas</h2><p>Mostrando os ${state.history.length} registros mais recentes. A lista atualiza automaticamente.</p></div></div><div class="table-wrap"><table><thead><tr><th>Plataforma</th><th>Oferta</th><th>Preço</th><th>Publicada em</th><th>Ação</th></tr></thead><tbody>${state.history.length?state.history.map((item,index)=>`<tr><td><span class="platform-tag">${platformBrand(item.plataforma)}${escapeHtml(item.plataforma)}</span></td><td>${escapeHtml(item.titulo)}</td><td><strong>${formatPrice(item.preco)}</strong></td><td>${escapeHtml(formatDate(item.postada_em))}</td><td><button class="button ghost history-copy" type="button" data-copy-history="${index}" aria-label="Copiar oferta: ${escapeHtml(item.titulo)}">Copiar</button></td></tr>`).join(""):'<tr><td class="empty" colspan="5">Nenhuma oferta registrada até agora.</td></tr>'}</tbody></table></div></section>`;
+    content.innerHTML=`<section class="panel"><div class="section-head"><div><span class="section-kicker">REGISTROS</span><h2>Ofertas publicadas</h2><p>Mostrando os ${state.history.length} registros mais recentes. A lista atualiza automaticamente.</p><p class="sendai-status" data-sendai-status></p></div></div><div class="table-wrap"><table><thead><tr><th>Plataforma</th><th>Oferta</th><th>Preço</th><th>Publicada em</th><th>Ação</th></tr></thead><tbody>${state.history.length?state.history.map((item,index)=>`<tr><td><span class="platform-tag">${platformBrand(item.plataforma)}${escapeHtml(item.plataforma)}</span></td><td>${escapeHtml(item.titulo)}</td><td><strong>${formatPrice(item.preco)}</strong></td><td>${escapeHtml(formatDate(item.postada_em))}</td><td><div class="history-actions"><button class="button ghost history-copy" type="button" data-copy-history="${index}" aria-label="Copiar oferta: ${escapeHtml(item.titulo)}">Copiar</button>${sendAiButton("history",index)}</div></td></tr>`).join(""):'<tr><td class="empty" colspan="5">Nenhuma oferta registrada até agora.</td></tr>'}</tbody></table></div></section>`;
   }
   if(state.page==="whatsapp"){
     const connected=state.whatsappStatus==="CONNECTED";
@@ -158,13 +192,17 @@ function render(){
     const groups=[...state.whatsappGroups];if(preferences.whatsappGroupJid&&!groups.some(group=>group.id===preferences.whatsappGroupJid))groups.push({id:preferences.whatsappGroupJid,name:preferences.whatsappGroupName||"Grupo salvo"});
     const selectedNiches=new Set(state.settings?.nichos||[]),nicheCatalog=state.settings?.nichoCatalog||[];
     const categorySection=`<section class="settings-section"><div class="settings-heading"><span class="settings-number">03</span><div><h2>Categorias dos produtos</h2><p>Limite o ciclo automático aos assuntos escolhidos.</p></div></div><div class="category-settings"><div class="category-toolbar"><strong id="category-summary">${selectedNiches.size?`${selectedNiches.size} categoria(s) selecionada(s)`:"Todas as categorias"}</strong><button class="button ghost" type="button" data-action="allcategories">Usar todas</button></div><div class="category-grid">${nicheCatalog.map(niche=>`<label class="category-option"><input name="nichos" type="checkbox" value="${escapeHtml(niche.chave)}" ${selectedNiches.has(niche.chave)?"checked":""}><span class="category-emoji">${escapeHtml(niche.emoji)}</span><strong>${escapeHtml(niche.nome)}</strong><i>✓</i></label>`).join("")}</div><small class="setting-note">Nada selecionado significa pesquisar ofertas de todas as categorias. A alteração vale a partir do próximo ciclo.</small></div></section>`;
-    content.innerHTML=`<form id="settings-form" class="settings-form"><section class="settings-section"><div class="settings-heading"><span class="settings-number logo-number">${brand("telegram","Telegram")}</span><div><h2>Telegram</h2><p>Canal, proprietário e acesso do bot.</p></div></div><div class="settings-grid">${field("TELEGRAM_BOT_TOKEN","Token do bot",env,true)}${field("TELEGRAM_OWNER_ID","Seu user ID",env)}${field("TELEGRAM_CHAT_ID","ID do canal",env)}</div></section><section class="settings-section"><div class="settings-heading"><span class="settings-number marketplace-stack">${brand("mercadolivre","Mercado Livre","tiny")}${brand("shopee","Shopee","tiny")}${brand("amazon","Amazon","tiny")}</span><div><h2>Afiliados</h2><p>Credenciais usadas para gerar seus links.</p></div></div><div class="settings-grid">${field("ML_ETIQUETA","Etiqueta Mercado Livre",env)}${field("AMAZON_TAG","Tag Amazon",env)}${field("AMAZON_CREDENTIAL_ID","Credential ID Amazon",env)}${field("AMAZON_CREDENTIAL_SECRET","Credential Secret Amazon",env,true)}${field("SHOPEE_APP_ID","App ID Shopee",env)}${field("SHOPEE_APP_SECRET","Secret Shopee",env,true)}</div></section>${categorySection}<section class="settings-section"><div class="settings-heading"><span class="settings-number logo-number">${brand("whatsapp","WhatsApp")}</span><div><h2>WhatsApp</h2><p>Envie as mesmas ofertas para um grupo, um Canal ou ambos.</p></div></div><div class="toggle-list"><label class="toggle-row"><span><strong>Enviar também ao WhatsApp</strong><small>Falhas ficam pendentes e nunca são reenviadas sozinhas.</small></span><input name="whatsappEnabled" type="checkbox" ${preferences.whatsappEnabled?"checked":""}><i></i></label><label class="toggle-row"><span><strong>Enviar foto completa</strong><small>Desative para usar a prévia do link; se ela falhar, o app usa a imagem principal.</small></span><input name="whatsappSendImage" type="checkbox" ${preferences.whatsappSendImage!==false?"checked":""}><i></i></label><div class="destination-card"><label class="field"><span>Grupo de destino</span><select id="whatsapp-group" name="whatsappGroupJid"><option value="">Conecte e carregue os grupos</option>${groups.map(group=>`<option value="${escapeHtml(group.id)}" ${group.id===preferences.whatsappGroupJid?"selected":""}>${escapeHtml(group.name)}</option>`).join("")}</select></label><div class="inline-actions"><button class="button secondary" type="button" data-action="wgroups" ${state.whatsappStatus==="CONNECTED"?"":"disabled"}>Carregar grupos</button><button class="button ghost" type="button" data-action="wtest" ${state.whatsappStatus==="CONNECTED"?"":"disabled"}>Testar grupo</button></div></div><div class="destination-card"><label class="toggle-row compact-toggle"><span><strong>Enviar também ao Canal</strong><small>O número conectado precisa ser administrador ou proprietário.</small></span><input name="whatsappChannelEnabled" type="checkbox" ${preferences.whatsappChannelEnabled?"checked":""}><i></i></label><label class="field"><span>Link ou ID do Canal</span><input id="whatsapp-channel" name="whatsappChannelJid" value="${escapeHtml(preferences.whatsappChannelJid||"")}" placeholder="https://whatsapp.com/channel/…" autocomplete="off"></label><div class="inline-actions"><button class="button secondary" type="button" data-action="wchannel" ${state.whatsappStatus==="CONNECTED"?"":"disabled"}>Validar Canal</button><button class="button ghost" type="button" data-action="wtestchannel" ${state.whatsappStatus==="CONNECTED"&&preferences.whatsappChannelJid?"":"disabled"}>Testar Canal</button><span class="channel-name">${preferences.whatsappChannelName?`✓ ${escapeHtml(preferences.whatsappChannelName)}`:"Nenhum Canal validado"}</span></div></div><div class="inline-actions"><button class="button secondary" type="button" data-action="wconnect" ${whatsappCanConnect?"":"disabled"}>${whatsappCanConnect?"Conectar":whatsappLabel(state.whatsappStatus)}</button></div><small class="setting-note">Status: ${whatsappLabel(state.whatsappStatus)}. Quando grupo e Canal estiverem ativos, haverá uma pausa de 5 segundos entre os dois envios.</small></div></section><section class="settings-section"><div class="settings-heading"><span class="settings-number">05</span><div><h2>Aplicativo</h2><p>Escolha quando o aplicativo e o bot devem iniciar.</p></div></div><div class="toggle-list"><label class="toggle-row"><span><strong>Iniciar com o Windows</strong><small>Abre o aplicativo minimizado na bandeja.</small></span><input id="start-windows" type="checkbox" ${preferences.startWithWindows?"checked":""}><i></i></label><label class="toggle-row"><span><strong>Ligar o bot automaticamente</strong><small>Inicia a operação quando o aplicativo abrir.</small></span><input name="autoStartBot" type="checkbox" ${preferences.autoStartBot?"checked":""}><i></i></label></div></section><div class="form-footer"><button class="button primary" type="submit">Salvar configurações</button><button class="button secondary" type="button" data-action="import">Importar instalação atual</button><span>Os segredos nunca são exibidos novamente.</span></div></form>`;
+    content.innerHTML=`<form id="settings-form" class="settings-form"><section class="settings-section"><div class="settings-heading"><span class="settings-number logo-number">${brand("telegram","Telegram")}</span><div><h2>Telegram</h2><p>Canal, proprietário e acesso do bot.</p></div></div><div class="settings-grid">${field("TELEGRAM_BOT_TOKEN","Token do bot",env,true)}${field("TELEGRAM_OWNER_ID","Seu user ID",env)}${field("TELEGRAM_CHAT_ID","ID do canal",env)}</div></section><section class="settings-section marketplace-section">${marketplaceSettings(state.settings,brand,field)}</section>${categorySection}<section class="settings-section"><div class="settings-heading"><span class="settings-number logo-number">${brand("whatsapp","WhatsApp")}</span><div><h2>WhatsApp</h2><p>Envie as mesmas ofertas para um grupo, um Canal ou ambos.</p></div></div><div class="toggle-list"><label class="toggle-row"><span><strong>Enviar também ao WhatsApp</strong><small>Falhas ficam pendentes e nunca são reenviadas sozinhas.</small></span><input name="whatsappEnabled" type="checkbox" ${preferences.whatsappEnabled?"checked":""}><i></i></label><label class="toggle-row"><span><strong>Enviar foto completa</strong><small>Desative para usar a prévia do link; se ela falhar, o app usa a imagem principal.</small></span><input name="whatsappSendImage" type="checkbox" ${preferences.whatsappSendImage!==false?"checked":""}><i></i></label><div class="destination-card"><label class="field"><span>Grupo de destino</span><select id="whatsapp-group" name="whatsappGroupJid"><option value="">Conecte e carregue os grupos</option>${groups.map(group=>`<option value="${escapeHtml(group.id)}" ${group.id===preferences.whatsappGroupJid?"selected":""}>${escapeHtml(group.name)}</option>`).join("")}</select></label><div class="inline-actions"><button class="button secondary" type="button" data-action="wgroups" ${state.whatsappStatus==="CONNECTED"?"":"disabled"}>Carregar grupos</button><button class="button ghost" type="button" data-action="wtest" ${state.whatsappStatus==="CONNECTED"?"":"disabled"}>Testar grupo</button></div></div><div class="destination-card"><label class="toggle-row compact-toggle"><span><strong>Enviar também ao Canal</strong><small>O número conectado precisa ser administrador ou proprietário.</small></span><input name="whatsappChannelEnabled" type="checkbox" ${preferences.whatsappChannelEnabled?"checked":""}><i></i></label><label class="field"><span>Link ou ID do Canal</span><input id="whatsapp-channel" name="whatsappChannelJid" value="${escapeHtml(preferences.whatsappChannelJid||"")}" placeholder="https://whatsapp.com/channel/…" autocomplete="off"></label><div class="inline-actions"><button class="button secondary" type="button" data-action="wchannel" ${state.whatsappStatus==="CONNECTED"?"":"disabled"}>Validar Canal</button><button class="button ghost" type="button" data-action="wtestchannel" ${state.whatsappStatus==="CONNECTED"&&preferences.whatsappChannelJid?"":"disabled"}>Testar Canal</button><span class="channel-name">${preferences.whatsappChannelName?`✓ ${escapeHtml(preferences.whatsappChannelName)}`:"Nenhum Canal validado"}</span></div></div><div class="inline-actions"><button class="button secondary" type="button" data-action="wconnect" ${whatsappCanConnect?"":"disabled"}>${whatsappCanConnect?"Conectar":whatsappLabel(state.whatsappStatus)}</button></div><small class="setting-note">Status: ${whatsappLabel(state.whatsappStatus)}. Quando grupo e Canal estiverem ativos, haverá uma pausa de 5 segundos entre os dois envios.</small></div></section><section class="settings-section"><div class="settings-heading"><span class="settings-number">05</span><div><h2>Aplicativo</h2><p>Escolha quando o aplicativo e o bot devem iniciar.</p></div></div><div class="toggle-list"><label class="toggle-row"><span><strong>Iniciar com o Windows</strong><small>Abre o aplicativo minimizado na bandeja.</small></span><input id="start-windows" type="checkbox" ${preferences.startWithWindows?"checked":""}><i></i></label><label class="toggle-row"><span><strong>Ligar o bot automaticamente</strong><small>Inicia a operação quando o aplicativo abrir.</small></span><input name="autoStartBot" type="checkbox" ${preferences.autoStartBot?"checked":""}><i></i></label></div></section><div class="form-footer"><button class="button primary" type="submit">Salvar configurações</button><button class="button secondary" type="button" data-action="import">Importar instalação atual</button><span>Os segredos nunca são exibidos novamente.</span></div></form>`;
     const affiliateSection=content.querySelectorAll(".settings-section")[1];
-    affiliateSection?.querySelector(".marketplace-stack")?.insertAdjacentHTML("beforeend",brand("aliexpress","AliExpress","tiny"));
-    affiliateSection?.querySelector(".settings-grid")?.insertAdjacentHTML("beforeend",`${field("ALIEXPRESS_APP_KEY","App Key AliExpress",env)}${field("ALIEXPRESS_APP_SECRET","Key Secret AliExpress",env,true)}${field("ALIEXPRESS_TRACKING_ID","Tracking ID AliExpress",env)}`);
+    affiliateSection?.insertAdjacentHTML("afterend",sheinSettings(state.settings,state.sheinSessionDetected,state.actionRunning,brand));
+  }
+  if(state.page==="search"){
+    const emptyDescription=content.querySelector(".search-empty p");
+    if(emptyDescription)emptyDescription.textContent="Digite o produto para receber até três resultados por plataforma: Mercado Livre, Shopee, Amazon, AliExpress e SHEIN, conforme as fontes ativas.";
   }
   bind();
   if(state.page==="console")renderLogs(scrollState);
+  if(converterSelection&&$("#convert-url")&&!state.linkConversion.loading){$("#convert-url").focus({preventScroll:true});$("#convert-url").setSelectionRange(...converterSelection)}
 }
 
 function bind(){
@@ -173,10 +211,19 @@ function bind(){
   const form=$("#settings-form");if(form)form.onsubmit=saveSettings;
   const filter=$("#log-filter");if(filter)filter.onchange=()=>{logFilter=filter.value;updateLogView()};
   document.querySelectorAll('input[name="nichos"]').forEach(input=>input.onchange=updateCategorySummary);
+  document.querySelectorAll('input[name^="marketplace-"]').forEach(input=>input.onchange=()=>{
+    const status=document.querySelector(`[data-marketplace-status="${input.name.slice(12)}"]`);
+    if(status){status.textContent=input.checked?"Ativo":"Desativado";status.classList.toggle("enabled",input.checked)}
+  });
   document.querySelectorAll("[data-retry-uid]").forEach(button=>button.onclick=()=>retryDelivery(button));
   const searchForm=$("#product-search-form");if(searchForm)searchForm.onsubmit=searchProducts;
+  const converterForm=$("#convert-form");if(converterForm)converterForm.onsubmit=convertLink;
+  const converterInput=$("#convert-url");if(converterInput)converterInput.oninput=()=>{state.linkConversion.url=converterInput.value;const platform=detectPlatform(converterInput.value);$("#convert-platform").textContent=platform?`Plataforma: ${platform.label}`:"A plataforma será identificada pelo endereço."};
+  document.querySelectorAll("[data-copy-conversion]").forEach(button=>button.onclick=()=>copyConversion(button));
   document.querySelectorAll("[data-copy-result]").forEach(button=>button.onclick=()=>copySearchResult(button));
   document.querySelectorAll("[data-copy-history]").forEach(button=>button.onclick=()=>copyHistoryItem(button));
+  document.querySelectorAll("[data-sendai-kind]").forEach(button=>button.onclick=()=>exportSendAi(button));
+  updateSendAiButtons();
 }
 
 function updateCategorySummary(){
@@ -185,7 +232,7 @@ function updateCategorySummary(){
   summary.textContent=count?`${count} categoria(s) selecionada(s)`:"Todas as categorias";
 }
 
-function navigate(page){state={...state,page};window.scrollTo(0,0);render();if(page==="history")void refreshHistory()}
+function navigate(page){state={...state,page};window.scrollTo(0,0);render();if(page==="history")void refreshHistory();if(["history","search"].includes(page))void sendai.refresh()}
 
 let historyLoading=false;
 async function refreshHistory(){
@@ -250,8 +297,9 @@ async function action(name){
     }
     return;
   }
-  const commands={cycle:["run_cycle",{confirmed:true}],ml:["test_source",{source:"ml"}],shopee:["test_source",{source:"shopee"}],amazon:["test_source",{source:"amazon"}],aliexpress:["test_source",{source:"aliexpress"}],login:["start_ml_login",{}],browser:["install_browser",{}]};
+  const commands={cycle:["run_cycle",{confirmed:true}],ml:["test_source",{source:"ml"}],shopee:["test_source",{source:"shopee"}],amazon:["test_source",{source:"amazon"}],aliexpress:["test_source",{source:"aliexpress"}],shein:["test_source",{source:"shein"}],"login-shein":["start_shein_login",{}],login:["start_ml_login",{}],browser:["install_browser",{}]};
   const command=commands[name];if(!command)return;
+  captureSettingsDraft();
   const info=operationInfo[name];
   state=startSessionAction({...state,actionRunning:true},name,info.label,info.running);render();
   let succeeded=false;
@@ -267,13 +315,32 @@ function captureSettingsDraft(){
   for(const key of Object.keys(env)){const value=String(data.get(key)||"");if(value||env[key]!=="__CONFIGURED__")env[key]=value}
   const group=form.querySelector("#whatsapp-group"),option=group?.selectedOptions?.[0];
   const channel=form.querySelector("#whatsapp-channel"),savedChannel=state.settings.preferences.whatsappChannelJid;
-  state.settings={...state.settings,env,nichos:data.getAll("nichos").map(String),preferences:{...state.settings.preferences,startWithWindows:$("#start-windows")?.checked||false,autoStartBot:data.has("autoStartBot"),whatsappEnabled:data.has("whatsappEnabled"),whatsappSendImage:data.has("whatsappSendImage"),whatsappGroupJid:group?.value||"",whatsappGroupName:option?.textContent||"",whatsappChannelEnabled:data.has("whatsappChannelEnabled"),whatsappChannelJid:channel?.value||"",whatsappChannelName:channel?.value===savedChannel?state.settings.preferences.whatsappChannelName||"":""}};
+  const config=captureMarketplaceConfig(data,state.settings.config);
+  state.settings={...state.settings,env,config,nichos:data.getAll("nichos").map(String),preferences:{...state.settings.preferences,startWithWindows:$("#start-windows")?.checked||false,autoStartBot:data.has("autoStartBot"),whatsappEnabled:data.has("whatsappEnabled"),whatsappSendImage:data.has("whatsappSendImage"),whatsappGroupJid:group?.value||"",whatsappGroupName:option?.textContent||"",whatsappChannelEnabled:data.has("whatsappChannelEnabled"),whatsappChannelJid:channel?.value||"",whatsappChannelName:channel?.value===savedChannel?state.settings.preferences.whatsappChannelName||"":""}};
 }
 
 async function retryDelivery(button){
   button.disabled=true;button.textContent="Enviando…";
   try{await request("retry_delivery",{uid:button.dataset.retryUid,destination:button.dataset.retryDestination});toast("Oferta enviada ao WhatsApp.");state={...state,pending:(await request("get_pending_deliveries")).items||[]};await refreshStatus();render()}
   catch{button.disabled=false;button.textContent="Enviar agora"}
+}
+
+async function convertLink(event){
+  event.preventDefault();
+  if(state.linkConversion.loading)return;
+  const url=String(new FormData(event.currentTarget).get("url")||"").trim();
+  state.linkConversion={url,loading:true,result:null,error:""};render();
+  try{state.linkConversion.result=await request("convert_link",{url})}
+  catch(error){state.linkConversion.error=String(error)}
+  finally{state.linkConversion.loading=false;render()}
+}
+
+async function copyConversion(button){
+  const result=state.linkConversion.result;
+  const text=button.dataset.copyConversion==="link"?result?.offer?.url_afiliado:result?.text;
+  if(!text)return;
+  try{await navigator.clipboard.writeText(text);toast(button.dataset.copyConversion==="link"?"Link de afiliado copiado.":"Oferta formatada copiada.")}
+  catch{toast("Não foi possível copiar. Selecione o resultado e copie manualmente.",true)}
 }
 
 async function searchProducts(event){
@@ -306,7 +373,7 @@ async function copyHistoryItem(button){
 async function saveSettings(event){
   event.preventDefault();
   const button=event.submitter,data=new FormData(event.target),env={};
-  for(const [key,value] of data)if(!["autoStartBot","whatsappEnabled","whatsappSendImage","whatsappGroupJid","whatsappChannelEnabled","whatsappChannelJid","nichos"].includes(key))env[key]=value;
+  for(const [key,value] of data)if(!key.startsWith("marketplace-")&&!["autoStartBot","whatsappEnabled","whatsappSendImage","whatsappGroupJid","whatsappChannelEnabled","whatsappChannelJid","nichos","sheinEnabled"].includes(key))env[key]=value;
   const nichos=data.getAll("nichos").map(String);
   const group=$("#whatsapp-group"),option=group?.selectedOptions?.[0];
   const channel=$("#whatsapp-channel"),savedChannel=state.settings?.preferences?.whatsappChannelJid;
@@ -316,7 +383,7 @@ async function saveSettings(event){
   try{const enabled=await invoke("get_autostart");if(enabled!==preferences.startWithWindows)await invoke("set_autostart",{enabled:preferences.startWithWindows})}
   catch(error){autostartError=String(error);preferences.startWithWindows=await invoke("get_autostart").catch(()=>false)}
   try{
-    await request("save_settings",{env,nichos,preferences});state.settings=await request("get_settings");render();
+    await request("save_settings",{env,nichos,preferences,config:{fontes:marketplaceFlags(data)}});state.settings=await request("get_settings");render();
     toast(autostartError?"Configurações salvas, mas o início com o Windows não pôde ser alterado.":"Configurações salvas.",Boolean(autostartError));
   }catch{if(button.isConnected){button.disabled=false;button.textContent="Salvar configurações"}}
 }
@@ -342,4 +409,5 @@ try{state=applyBackendState(state,await request("get_status"));state.settings=aw
 render();
   setInterval(()=>{document.querySelectorAll('[data-countdown="next"]').forEach(element=>element.textContent=state.cycleRunning?"Em andamento":formatCountdown(state.nextCycleAt));document.querySelectorAll('[data-countdown="pause"]').forEach(element=>element.textContent=state.pauseUntil?formatCountdown(state.pauseUntil):"Sem pausa");document.querySelectorAll('[data-countdown="whatsapp"]').forEach(element=>element.textContent=formatCountdown(state.whatsappRetryAt))},1000);
 setInterval(()=>{if(state.page==="history")void refreshHistory()},3000);
+setInterval(()=>{if(["history","search"].includes(state.page))void sendai.refresh()},5000);
 setTimeout(()=>invoke("check_for_updates").catch(error=>console.warn("Atualização:",error)),3000);

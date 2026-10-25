@@ -99,7 +99,7 @@ def cmd_painel(_):
 def cmd_instalar_navegador(_):
     code = instalar_navegador()
     if code == 0:
-        print("✅ Chromium instalado em data\\pw-browsers")
+        print("✅ Chromium e CloakBrowser prontos para uso.")
     raise SystemExit(code)
 
 
@@ -112,12 +112,22 @@ def instalar_navegador() -> int:
         command = [node, cli, "install", "chromium"]
     else:
         command = [sys.executable, "-m", "playwright", "install", "chromium"]
-    return subprocess.run(command).returncode
+    code = subprocess.run(command).returncode
+    if code:
+        return code
+    from .sources.mercadolivre import instalar_cloak
+    instalar_cloak()
+    return 0
 
 
 def cmd_ml_login(_):
     from .sources import mercadolivre
     mercadolivre.ml_login()
+
+
+def cmd_shein_login(_):
+    from .sources import shein
+    shein.login()
 
 
 def cmd_testar(args):
@@ -136,8 +146,13 @@ def cmd_testar(args):
     elif args.fonte == "aliexpress":
         from .sources import aliexpress
         ofertas = aliexpress.buscar_ofertas(10)
+    elif args.fonte == "shein":
+        from .sources import shein
+        ofertas = shein.buscar_ofertas(10)
+        if ofertas:
+            shein.gerar_links_afiliado(ofertas[:1])
     else:
-        raise SystemExit("Fontes testáveis: ml, shopee, amazon, aliexpress")
+        raise SystemExit("Fontes testáveis: ml, shopee, amazon, aliexpress, shein")
     ofertas.sort(key=lambda o: o.desconto or 0, reverse=True)
     for o in ofertas[:10]:
         print(f"[-{o.desconto or 0:>2}%] R$ {o.preco} (de {o.preco_original}) — "
@@ -171,9 +186,10 @@ def main():
 
     sub.add_parser("instalar-navegador", help="baixa o Chromium usado pelo Linkbuilder (fica em data/)").set_defaults(fn=cmd_instalar_navegador)
     sub.add_parser("ml-login", help="login único no Mercado Livre (salva a sessão)").set_defaults(fn=cmd_ml_login)
+    sub.add_parser("shein-login", help="prepara a sessão local de afiliado da SHEIN").set_defaults(fn=cmd_shein_login)
 
     pt = sub.add_parser("testar", help="testa uma fonte sem postar nada")
-    pt.add_argument("fonte", choices=["ml", "shopee", "amazon", "aliexpress"])
+    pt.add_argument("fonte", choices=["ml", "shopee", "amazon", "aliexpress", "shein"])
     pt.set_defaults(fn=cmd_testar)
 
     sub.add_parser("desktop", help=argparse.SUPPRESS).set_defaults(fn=lambda _: __import__(

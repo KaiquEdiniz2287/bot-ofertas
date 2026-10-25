@@ -7,6 +7,7 @@ _PLATAFORMA = {
     "shopee": "🧡 Shopee",
     "aliexpress": "🛍️ AliExpress",
     "amazon": "📦 Amazon",
+    "shein": "🖤 SHEIN",
 }
 
 

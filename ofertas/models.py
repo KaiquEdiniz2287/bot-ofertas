@@ -3,7 +3,7 @@ from dataclasses import dataclass
 
 @dataclass
 class Oferta:
-    plataforma: str            # "mercadolivre" | "shopee" | "amazon" | "aliexpress"
+    plataforma: str            # "mercadolivre" | "shopee" | "amazon" | "aliexpress" | "shein"
     id_produto: str
     titulo: str
     url_afiliado: str          # vazio até o link de afiliado ser gerado

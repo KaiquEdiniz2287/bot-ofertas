@@ -80,11 +80,19 @@ def _chamar(operacao: str, corpo: dict) -> list[dict]:
                "Content-Type": "application/json", "x-marketplace": MARKETPLACE}
     r = requests.post(API_BASE + operacao, json=corpo, headers=headers, timeout=30)
     if r.status_code != 200:
-        raise RuntimeError(f"Creators API {operacao} HTTP {r.status_code}: {r.text[:300]}")
+        try:
+            erro = r.json()
+        except ValueError:
+            erro = {}
+        motivo = erro.get("reason") or erro.get("type") or "resposta recusada"
+        raise RuntimeError(f"Creators API {operacao} HTTP {r.status_code}: {motivo}")
     dados = r.json()
     if dados.get("errors"):
         log.warning("Creators API %s: %s", operacao, dados["errors"])
     resultado = dados.get("itemsResult") or dados.get("searchResult") or {}
+    if dados.get("errors") and not resultado.get("items"):
+        codigos = ", ".join(str(erro.get("code") or "erro não identificado") for erro in dados["errors"])
+        raise RuntimeError(f"Creators API {operacao}: {codigos}")
     return resultado.get("items") or []
 
 
@@ -123,9 +131,14 @@ def _item_para_oferta(item: dict) -> Oferta | None:
 
 def _buscar_por_api() -> list[Oferta]:
     """SearchItems com desconto mínimo: termos livres e/ou um termo genérico por departamento."""
-    paginas = int(config.fonte_amazon.get("paginas", 1))
-    consultas = [(str(t), None) for t in (config.fonte_amazon.get("buscas") or [])]
+    paginas = max(1, min(10, int(config.fonte_amazon.get("paginas", 1))))
+    consultas = [(str(t).strip(), None) for t in (config.fonte_amazon.get("buscas") or []) if str(t).strip()]
     consultas += [(nome, SEARCH_INDEX.get(alias)) for alias, nome in _departamentos().items()]
+    if not consultas:
+        # SearchItems exige um termo: configuração vazia significa todas as
+        # categorias, não ausência de consultas (nem credenciais já validadas).
+        consultas = [("ofertas", None)]
+        log.info("Amazon: nenhuma categoria específica selecionada; consultando 'ofertas' em todas as categorias pela API.")
     ofertas: dict[str, Oferta] = {}
     for termo, indice in consultas:
         for pagina in range(1, paginas + 1):
@@ -139,6 +152,7 @@ def _buscar_por_api() -> list[Oferta]:
                 o = _item_para_oferta(item)
                 if o:
                     ofertas[o.id_produto] = o
+            log.info("Amazon API: consulta '%s', página %d concluída; %d oferta(s) acumulada(s).", termo, pagina, len(ofertas))
     return list(ofertas.values())
 
 
@@ -323,8 +337,10 @@ def buscar_ofertas() -> list[Oferta]:
         except Exception as e:
             if "AssociateNotEligible" in str(e):
                 _api_bloqueada_ate = time.time() + 6 * 3600
-                log.warning("Amazon: conta ainda não elegível para a Creators API — "
-                            "usando scraping das buscas (tento a API de novo em 6h)")
+                log.warning("Amazon: a API recusou o acesso ao catálogo (AssociateNotEligible). "
+                            "A conta ainda não atende aos requisitos da Amazon para a API, "
+                            "que incluem 10 vendas qualificadas nos últimos 30 dias. "
+                            "Tentando a busca pelo site; nova tentativa da API em 6h.")
             else:
                 log.error("Amazon (Creators API): %s — usando scraping", e)
     tarefas = _tarefas_do_ciclo()
